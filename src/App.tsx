@@ -1,12 +1,19 @@
-import { Box, Heading } from "@chakra-ui/react"
-import Meeting from "./components/meeting"
+import HomePage from "@/pages/Home"
+import MainLayout from "@/pages/layout"
+import { BrowserRouter, Route, Routes } from "react-router-dom"
+import { routes } from "@/routes/route"
 
-function App() {
+export default function App() {
   return (
-    <Box>
-      <Meeting />
-    </Box>
+    <BrowserRouter /* basename="/app" */>
+      <Routes>
+        <Route path="/" element={<MainLayout />}>
+          <Route index element={<HomePage />} />
+          {routes.map((route) => (
+            <Route key={route.path} path={route.path} element={<route.element />} />
+          ))}
+        </Route>
+      </Routes>
+    </BrowserRouter>
   )
 }
-
-export default App
