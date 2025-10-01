@@ -2,7 +2,7 @@ import MeetingPage from "@/pages/Meeting"
 
 const routes = [
   {
-    path: "/meeting",
+    path: "/meeting/:roomID",
     element: MeetingPage,
   },
 ]

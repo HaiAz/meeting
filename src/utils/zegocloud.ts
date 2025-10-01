@@ -3,11 +3,16 @@ import { ZegoExpressEngine } from "zego-express-engine-webrtc";
 import type { ZegoUser } from "zego-express-engine-webrtc/sdk/code/zh/ZegoExpressEntity.rtm";
 import type ZegoLocalStream from "zego-express-engine-webrtc/sdk/code/zh/ZegoLocalStream.web";
 
-export type RemoteViewMap = Map<string, ReturnType<ZegoExpressEngine["createRemoteStreamView"]>>;
-export type Participant = { userID: string; userName?: string };
+const APP_ID = Number(import.meta.env.VITE_ZEGO_APP_ID)
+const SERVER_WS = import.meta.env.VITE_ZEGO_SERVER_WS
 
-export function createEngine(appID: number, server: string) {
-  const engine = new ZegoExpressEngine(appID, server);
+export type RemoteViewMap = Map<string, ReturnType<ZegoExpressEngine["createRemoteStreamView"]>>;
+export type Participant = { userID: string; userName: string };
+
+export function createEngine() {
+  if (!APP_ID || Number.isNaN(APP_ID) || !SERVER_WS) throw new Error("Missing ZEGO_APP_ID or ZEGO_SERVER_WS");
+
+  const engine = new ZegoExpressEngine(APP_ID, SERVER_WS);
   engine.setLogConfig({ logLevel: "disable", remoteLogLevel: "disable", logURL: "" });
   engine.setDebugVerbose(false);
   return engine;
@@ -16,27 +21,42 @@ export function createEngine(appID: number, server: string) {
 /**
  * Gắn listeners cho Room
  */
-export function wireRoomHandlers(
+export function wireParticipants(
   engine: ZegoExpressEngine,
-  opts: {
-    remoteContainer: HTMLDivElement | null;
-    remoteViewMap: RemoteViewMap;
-    onParticipants: (updater: (prev: Participant[]) => Participant[]) => void;
-  }
+  onParticipants: (updater: (prev: Participant[]) => Participant[]) => void
 ) {
-  const { remoteContainer, remoteViewMap, onParticipants } = opts;
-
+  console.log('on participant')
   const onRoomUserUpdate = (_roomID: string, updateType: "ADD" | "DELETE", userList: ZegoUser[]) => {
+    console.log('user update ===', updateType);
     onParticipants((prev) => {
       const map = new Map(prev.map((u) => [u.userID, u]));
       if (updateType === "ADD") {
-        userList.forEach((u) => map.set(u.userID, { userID: u.userID, userName: u.userName }));
+        console.log('user add');
+        userList.forEach((u) => map.set(u.userID, { userID: u.userID, userName: u.userName! }));
       } else {
+        console.log('user delete');
         userList.forEach((u) => map.delete(u.userID));
       }
       return Array.from(map.values());
     });
   };
+
+  engine.on("roomUserUpdate", onRoomUserUpdate)
+
+  return () => {
+    engine.off?.("roomUserUpdate", onRoomUserUpdate)
+  }
+}
+
+type WireStreamsOpts = {
+  remoteContainer: HTMLDivElement | null
+  remoteViewMap: RemoteViewMap
+  onStreamAdd?: (streamID: string) => void
+  onStreamDelete?: (streamID: string) => void
+}
+
+export function wireStreams(engine: ZegoExpressEngine, opts: WireStreamsOpts) {
+  const { remoteContainer, remoteViewMap, onStreamAdd, onStreamDelete } = opts
 
   const onRoomStreamUpdate = async (
     _roomID: string,
@@ -45,53 +65,52 @@ export function wireRoomHandlers(
   ) => {
     if (updateType === "ADD") {
       for (const s of streamList) {
-        const id = s.streamID;
-        if (remoteViewMap.has(id)) continue;
-        const remoteStream = await engine.startPlayingStream(id);
-        const view = engine.createRemoteStreamView(remoteStream);
+        const id = s.streamID
+        if (remoteViewMap.has(id)) continue
+
+        const remoteStream = await engine.startPlayingStream(id)
+        const view = engine.createRemoteStreamView(remoteStream)
 
         // mount 1 slot/stream
-        const slot = document.createElement("div");
-        slot.id = `remote-${id}`;
+        const slot = document.createElement("div")
+        slot.id = `remote-${id}`
         Object.assign(slot.style, {
           width: "320px",
           height: "240px",
           border: "1px solid #999",
           margin: "8px",
           position: "relative",
-        });
-        if (id.includes("_screen")) slot.style.outline = "3px solid #3182ce";
+        } as CSSStyleDeclaration) // cast để TS đỡ kêu
 
-        remoteContainer?.appendChild(slot);
-        view.play(slot);
-        remoteViewMap.set(id, view);
+        if (id.includes("_screen")) slot.style.outline = "3px solid #3182ce"
+
+        remoteContainer?.appendChild(slot)
+        view.play(slot)
+        remoteViewMap.set(id, view)
+        onStreamAdd?.(id)
       }
     } else {
       for (const s of streamList) {
-        const id = s.streamID;
-        engine.stopPlayingStream(id);
-        document.getElementById(`remote-${id}`)?.remove();
-        remoteViewMap.delete(id);
+        const id = s.streamID
+        engine.stopPlayingStream(id)
+        document.getElementById(`remote-${id}`)?.remove()
+        remoteViewMap.delete(id)
+        onStreamDelete?.(id)
       }
     }
-  };
+  }
 
-  engine.on("roomUserUpdate", onRoomUserUpdate);
-  engine.on("roomStreamUpdate", onRoomStreamUpdate);
+  engine.on("roomStreamUpdate", onRoomStreamUpdate)
 
   return () => {
-    try {
-      // dừng play & dọn UI
-      for (const id of Array.from(remoteViewMap.keys())) {
-        engine.stopPlayingStream(id);
-        document.getElementById(`remote-${id}`)?.remove();
-      }
-      remoteViewMap.clear();
-    } finally {
-      engine.off?.("roomUserUpdate", onRoomUserUpdate);
-      engine.off?.("roomStreamUpdate", onRoomStreamUpdate);
+    // dừng tất cả đang play & dọn UI
+    for (const id of Array.from(remoteViewMap.keys())) {
+      engine.stopPlayingStream(id)
+      document.getElementById(`remote-${id}`)?.remove()
     }
-  };
+    remoteViewMap.clear()
+    engine.off?.("roomStreamUpdate", onRoomStreamUpdate)
+  }
 }
 
 export async function loginRoom(
@@ -110,20 +129,16 @@ export async function logoutRoom(engine: ZegoExpressEngine, roomID: string) {
 /** Camera helpers */
 export async function startCamera(
   engine: ZegoExpressEngine,
-  params: {
-    userID: string;
-    localVideoEl: HTMLDivElement | null;
-    quality?: 1 | 2 | 3 | 4 | undefined; // 1-4 theo SDK
-  }
+  params: { userID: string; quality?: 1 | 2 | 3 | 4 }
 ): Promise<{ stream: ZegoLocalStream; streamId: string }> {
   const cam = await engine.createZegoStream({
     camera: { video: { quality: params.quality ?? 3 }, audio: true },
-  });
-  if (params.localVideoEl) cam.playVideo(params.localVideoEl);
-  const streamId = `${params.userID}_cam_${rand(6)}`;
-  await engine.startPublishingStream(streamId, cam);
-  return { stream: cam, streamId };
+  })
+  const streamId = `${params.userID}_cam_${randomCode()}`
+  engine.startPublishingStream(streamId, cam)
+  return { stream: cam, streamId }
 }
+
 
 export async function stopCamera(
   engine: ZegoExpressEngine,
@@ -132,9 +147,9 @@ export async function stopCamera(
   localVideoEl: HTMLDivElement | null
 ) {
   try {
-    if (streamId) await engine.stopPublishingStream(streamId);
+    if (streamId) engine.stopPublishingStream(streamId);
   } finally {
-    if (stream) await engine.destroyStream(stream);
+    if (stream) engine.destroyStream(stream);
     if (localVideoEl) localVideoEl.innerHTML = "";
   }
 }
@@ -153,8 +168,8 @@ export async function startScreen(
     screen: { audio: !!params.withAudio },
   });
   if (params.screenPreviewEl) screen.playVideo(params.screenPreviewEl);
-  const streamId = `${params.userID}_screen_${rand(6)}`;
-  await engine.startPublishingStream(streamId, screen);
+  const streamId = `${params.userID}_screen_${randomCode()}`;
+  engine.startPublishingStream(streamId, screen);
 
   const vtrack = screen.stream?.getVideoTracks?.()[0];
   vtrack?.addEventListener("ended", () => params.onEnded?.());
@@ -169,21 +184,29 @@ export async function stopScreen(
   screenPreviewEl: HTMLDivElement | null
 ) {
   try {
-    if (streamId) await engine.stopPublishingStream(streamId);
+    if (streamId) engine.stopPublishingStream(streamId);
   } finally {
-    if (stream) await engine.destroyStream(stream);
+    if (stream) engine.destroyStream(stream);
     if (screenPreviewEl) screenPreviewEl.innerHTML = "";
   }
 }
 
-/** Hủy engine an toàn */
+/** Hủy engine */
 export function destroyEngine(engine: ZegoExpressEngine | null) {
   engine?.destroyEngine();
 }
 
-function rand(len = 6) {
-  const chars = "12345qwertyuiopasdfgh67890jklmnbvcxzMNBVCZXASDQWERTYHGFUIOLKJP";
-  let s = "";
-  for (let i = 0; i < len; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
-  return s;
+export function randomCode() {
+  const chars = "abcdefghijklmnopqrstuvwxyz"; // bộ ký tự
+  const pattern = [3, 4, 3]; // độ dài từng block
+
+  function randomBlock(len: number) {
+    let s = "";
+    for (let i = 0; i < len; i++) {
+      s += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return s;
+  }
+
+  return pattern.map(randomBlock).join("-");
 }

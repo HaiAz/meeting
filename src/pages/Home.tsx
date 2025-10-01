@@ -1,6 +1,27 @@
+import { randomCode } from "@/utils/zegocloud"
 import { Box, Flex, Heading, Span, Button, Input } from "@chakra-ui/react"
+import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 
 export default function HomePage() {
+  const navigate = useNavigate()
+
+  const [roomID, setRoomID] = useState<string>("")
+  const [userName, setUserName] = useState<string>("")
+
+  const handleCreateNewMeeting = () => {
+    const newRoomId = randomCode()
+    navigate(`/meeting/${newRoomId}`)
+    setRoomID(newRoomId)
+  }
+
+  const joinRoom = () => {
+    if (roomID === "") return
+    navigate(`/meeting/${roomID}?userName=${userName}`)
+    setRoomID("")
+    setUserName("")
+  }
+
   return (
     <Box>
       <Flex gap={4} maxW="624px" flexDir="column" mx="auto">
@@ -12,11 +33,20 @@ export default function HomePage() {
           <Span fontWeight="bold">Meeting Conference</Span>
         </Heading>
 
-        <Flex gap={5}>
-          <Button>Cuộc họp mới</Button>
+        <Flex gap={5} flexDirection="column">
+          <Button onClick={() => handleCreateNewMeeting()}>Cuộc họp mới</Button>
           <Flex w="full" gap={1}>
-            <Input placeholder="Nhập mã phòng" />
-            <Button>Tham gia</Button>
+            <Input
+              placeholder="Nhập tên"
+              onChange={(e) => setUserName(e.target.value)}
+              value={userName}
+            />
+            <Input
+              placeholder="Nhập mã phòng"
+              onChange={(e) => setRoomID(e.target.value)}
+              value={roomID}
+            />
+            <Button onClick={() => joinRoom()}>Tham gia</Button>
           </Flex>
         </Flex>
       </Flex>
