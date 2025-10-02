@@ -8,6 +8,8 @@ import {
   stopScreen,
   startScreen,
   logoutRoom,
+  stopAudio,
+  startAudio,
 } from "@/utils/zegocloud"
 import { useRoomStore } from "@/store/meetingStore"
 import { Avatar, Box, Button, Card, HStack, Stack } from "@chakra-ui/react"
@@ -39,16 +41,20 @@ export default function UserCard(props: UserCardProps) {
   // Store: chỉ lấy slots (cam/screen) của user này
   const camStreamId = useRoomStore((s) => s.slots[userID]?.cam ?? null)
   const screenStreamId = useRoomStore((s) => s.slots[userID]?.screen ?? null)
+  const audioStreamId = useRoomStore((s) => s.slots[userID]?.audio ?? null)
 
   // Join/publish (self)
   const [isJoined, setIsJoined] = useState(false)
   const [isJoining, setIsJoining] = useState(false)
   const [localCam, setLocalCam] = useState<ZegoLocalStream | null>(null)
+  const [localAudio, setLocalAudio] = useState<ZegoLocalStream | null>(null)
   const [localScreen, setLocalScreen] = useState<ZegoLocalStream | null>(null)
   const [camPubId, setCamPubId] = useState<string>("")
+  const [audioPubId, setAudioPubId] = useState<string>("")
   const [screenPubId, setScreenPubId] = useState<string>("")
 
   const camRef = useRef<HTMLDivElement>(null)
+  const audioRef = useRef<HTMLDivElement>(null)
   const screenRef = useRef<HTMLDivElement>(null)
   const zgRef = useRef<ReturnType<typeof createEngine> | null>(null)
 
@@ -69,6 +75,11 @@ export default function UserCard(props: UserCardProps) {
   useEffect(() => {
     if (localCam && camRef.current) localCam.playVideo(camRef.current)
   }, [localCam])
+
+  // local audio preview
+  useEffect(() => {
+    if (localAudio && audioRef.current) localAudio.playVideo(audioRef.current)
+  }, [localAudio])
 
   // local screen preview (container luôn mounted khi self)
   useEffect(() => {
@@ -95,6 +106,22 @@ export default function UserCard(props: UserCardProps) {
       if (el) el.innerHTML = ""
     }
   }, [self, camStreamId, remoteViews])
+
+  // remote audio
+  useEffect(() => {
+    if (self) return
+    const el = audioRef.current
+    if (!el) return
+    if (!audioStreamId) {
+      el.innerHTML = ""
+      return
+    }
+    const view = remoteViews.get(audioStreamId)
+    view?.playVideo(el)
+    return () => {
+      if (el) el.innerHTML = ""
+    }
+  }, [self, audioStreamId, remoteViews])
 
   // remote screen
   useEffect(() => {
@@ -150,6 +177,22 @@ export default function UserCard(props: UserCardProps) {
     }
   }, [self, isJoined, localCam, camPubId, myUserID])
 
+  const handleAudio = useCallback(async () => {
+    if (!self || !zgRef.current || !isJoined) return
+    if (localAudio) {
+      await stopAudio(zgRef.current, localAudio, audioPubId)
+      setLocalAudio(null)
+      setAudioPubId("")
+    } else {
+      const { stream, streamId } = await startAudio(zgRef.current, {
+        userID: myUserID,
+      })
+      setLocalAudio(stream)
+      setAudioPubId(streamId)
+      if (audioRef.current) stream.playVideo(audioRef.current)
+    }
+  }, [audioPubId, isJoined, localAudio, myUserID, self])
+
   const handleShareScreen = useCallback(async () => {
     if (!self || !zgRef.current || !isJoined) return
     if (localScreen) {
@@ -180,6 +223,8 @@ export default function UserCard(props: UserCardProps) {
     setScreenPubId("")
     setLocalCam(null)
     setCamPubId("")
+    setLocalAudio(null)
+    setAudioPubId("")
     await logoutRoom(zgRef.current, roomID)
     setIsJoined(false)
     navigate("/")
@@ -193,13 +238,13 @@ export default function UserCard(props: UserCardProps) {
             <Button onClick={onJoin} disabled={isJoined || isJoining} loading={isJoining}>
               {isJoined ? "Joined" : "Join"}
             </Button>
+            <Button onClick={handleAudio} disabled={!isJoined}>
+              {localAudio ? "Stop Audio" : "Start Audio"}
+            </Button>
             <Button onClick={handleCamera} disabled={!isJoined}>
               {localCam ? "Stop Camera" : "Start Camera"}
             </Button>
             <Button onClick={handleShareScreen} disabled={!isJoined}>
-              {localScreen ? "Stop Screen" : "Start Sharing"}
-            </Button>
-            <Button onClick={handle} disabled={!isJoined}>
               {localScreen ? "Stop Screen" : "Start Sharing"}
             </Button>
             <Button onClick={onLeave} disabled={!isJoined}>
@@ -269,6 +314,23 @@ export default function UserCard(props: UserCardProps) {
           borderRadius="md"
           display={self ? (localScreen ? "flex" : "none") : screenStreamId ? "flex" : "none"}
         />
+
+        <Box
+          ref={audioRef}
+          id={
+            self
+              ? `${userID}_audio_local`
+              : audioStreamId
+              ? `remote-${audioStreamId}`
+              : undefined
+          }
+          w="1px"
+          h="1px"
+          border="1px solid #3182ce"
+          mx="auto"
+          mb={1}
+          borderRadius="md"
+          />
       </Card.Body>
     </Card.Root>
   )

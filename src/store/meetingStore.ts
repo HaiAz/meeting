@@ -2,8 +2,8 @@ import { create } from "zustand"
 import { immer } from "zustand/middleware/immer"
 import type { Participant } from "@/utils/zegocloud"
 
-type SlotKind = "cam" | "screen" | "mic";
-export type UserSlots = { cam?: string | null; screen?: string | null, mic?: string | null }
+type SlotKind = "cam" | "screen" | "audio";
+export type UserSlots = { cam?: string | null; screen?: string | null, audio?: string | null }
 
 type RoomState = {
   users: Record<string, Participant>

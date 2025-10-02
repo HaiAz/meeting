@@ -1,5 +1,5 @@
-import { Box, Heading, Stack, Text, Badge, Flex, Button } from "@chakra-ui/react"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { Box, Heading, Stack, Text, Badge, Flex } from "@chakra-ui/react"
+import { useEffect, useRef, useState } from "react"
 import {
   createEngine,
   type Participant,
@@ -11,7 +11,6 @@ import { useSearchParams } from "react-router-dom"
 import UserCard from "@/components/UserCard"
 import useZegoEngine from "@/hooks/useZego"
 import { useRoomStore } from "@/store/meetingStore"
-import type { ZegoPlayerState } from "zego-express-engine-webrtc/sdk/code/zh/ZegoExpressEntity.web"
 
 export default function MeetingPage() {
   const [searchParams] = useSearchParams()
@@ -22,9 +21,6 @@ export default function MeetingPage() {
   const [participants, setParticipants] = useState<Participant[]>([])
   const zgRef = useRef<ReturnType<typeof createEngine> | null>(null)
 
-  // Unlock autoplay
-  const [audioReady, setAudioReady] = useState(false)
-
   // Store
   const setSlot = useRoomStore((s) => s.setSlot)
   const clearSlot = useRoomStore((s) => s.clearSlot)
@@ -33,57 +29,6 @@ export default function MeetingPage() {
 
   // Remote views map (KHÔNG để trong store để tránh mutate phải frozen object)
   const remoteViewsRef = useRef<RemoteViewMap>(new Map())
-
-  // --- helpers: play lại 1 view theo id (cam/screen/mic)
-  const playViewForId = useCallback((id: string) => {
-    const view = remoteViewsRef.current.get(id)
-    if (!view) return
-    const el = document.getElementById(`remote-${id}`) as HTMLDivElement | null
-    if (el) {
-      try {
-        const ret = view.playVideo(el)
-        // một số bản SDK trả về promise; bỏ lỗi bắt lại nếu có
-        // @ts-expect-error - ret có thể là Promise or void
-        if (ret?.catch) ret.catch(() => {})
-      } catch {
-        /* noop */
-      }
-    }
-  }, [])
-
-  // --- replay tất cả sau khi “Enable audio”
-  const replayAllRemote = useCallback(() => {
-    for (const id of remoteViewsRef.current.keys()) {
-      playViewForId(id)
-    }
-  }, [playViewForId])
-
-  // --- nút Enable audio
-  const enableAudio = useCallback(() => {
-    setAudioReady(true)
-    replayAllRemote()
-  }, [replayAllRemote])
-
-  // --- nút Test sound (beep ~300ms, không cần any)
-  const playTestSound = useCallback(() => {
-    // hỗ trợ Safari cũ
-    type W = Window & { webkitAudioContext?: typeof AudioContext }
-    const AC = window.AudioContext ?? (window as W).webkitAudioContext
-    if (!AC) return
-    const ctx = new AC()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.type = "sine"
-    osc.frequency.value = 440
-    gain.gain.value = 0.06
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.start()
-    setTimeout(() => {
-      osc.stop()
-      ctx.close?.()
-    }, 300)
-  }, [])
 
   useEffect(() => {
     zgRef.current = engine
@@ -97,55 +42,18 @@ export default function MeetingPage() {
       remoteViewMap: remoteViewsRef.current,
       setSlot,
       clearSlot,
-      onStreamAdd: (id) => {
-        if (audioReady) playViewForId(id)
-      },
       onStreamDelete: () => {},
     })
-
-    // playerStateUpdate: nếu bị chặn autoplay → replay khi đã unlock
-    const onPlayerStateUpdate = (props: ZegoPlayerState) => {
-      const { streamID, state } = props
-      if (audioReady && (state === "NO_PLAY" || state === "PLAY_REQUESTING")) {
-        playViewForId(streamID)
-      }
-    }
-    engine.on("playerStateUpdate", onPlayerStateUpdate)
 
     return () => {
       cleanupStreams()
       cleanupUsers()
-      engine.off?.("playerStateUpdate", onPlayerStateUpdate)
       zgRef.current = null
     }
-  }, [audioReady, clearSlot, engine, playViewForId, removeUsers, setSlot, upsertUsers])
+  }, [clearSlot, engine, removeUsers, setSlot, upsertUsers])
 
   return (
     <Box p={4} position="relative">
-      {!audioReady && (
-        <Box
-          bg="yellow.50"
-          border="1px solid"
-          borderColor="yellow.200"
-          p={2}
-          mb={3}
-          borderRadius="md"
-          textAlign="center"
-        >
-          <Text fontSize="sm" mb={2}>
-            Trình duyệt có thể chặn tự phát âm thanh. Nhấn "Enable audio" để nghe tiếng.
-          </Text>
-          <Stack direction="row" justify="center" gap={2}>
-            <Button size="sm" onClick={enableAudio}>
-              Enable audio
-            </Button>
-            <Button size="sm" variant="outline" onClick={playTestSound}>
-              Test sound
-            </Button>
-          </Stack>
-        </Box>
-      )}
-
       <Heading as="h1" textAlign="center" mb={2}>
         Zego RTC Video Call
       </Heading>

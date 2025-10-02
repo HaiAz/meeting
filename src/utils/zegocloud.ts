@@ -7,7 +7,7 @@ const SERVER_WS = import.meta.env.VITE_ZEGO_SERVER_WS
 
 export type RemoteViewMap = Map<string, ReturnType<ZegoExpressEngine["createRemoteStreamView"]>>
 export type Participant = { userID: string; userName: string }
-export type StreamKind = "cam" | "screen" | "mic"
+export type StreamKind = "cam" | "screen" | "audio"
 
 export function createEngine() {
   if (!APP_ID || Number.isNaN(APP_ID) || !SERVER_WS)
@@ -18,12 +18,12 @@ export function createEngine() {
   return engine
 }
 
-/** `${userID}_cam_xxx` | `${userID}_screen_xxx` | `${userID}_mic_xxx` */
+/** `${userID}_cam_xxx` | `${userID}_screen_xxx` | `${userID}_audio_xxx` */
 export function parseStreamId(
   id: string
 ): { userID: string; kind: StreamKind } | null {
   // non-greedy cho userID có dấu gạch dưới
-  const m = id.match(/^(.+?)_(cam|screen|mic)_.+$/)
+  const m = id.match(/^(.+?)_(cam|screen|audio)_.+$/)
   if (!m) return null
   return { userID: m[1], kind: m[2] as StreamKind }
 }
@@ -67,8 +67,8 @@ export function wireParticipants(
 /** ==== Room streams ==== */
 type WireStreamsOpts = {
   remoteViewMap: RemoteViewMap
-  setSlot?: (userID: string, kind: "cam" | "screen" | "mic", streamId: string) => void
-  clearSlot?: (userID: string, kind: "cam" | "screen" | "mic") => void
+  setSlot?: (userID: string, kind: "cam" | "screen" | "audio", streamId: string) => void
+  clearSlot?: (userID: string, kind: "cam" | "screen" | "audio") => void
   onStreamAdd?: (streamID: string) => void
   onStreamDelete?: (streamID: string) => void
 }
@@ -132,17 +132,18 @@ export async function loginRoom(
 ) {
   return engine.loginRoom(roomID, token, user, { userUpdate: true })
 }
+
 export async function logoutRoom(engine: ZegoExpressEngine, roomID: string) {
   return engine.logoutRoom(roomID)
 }
 
-/** ==== Camera ==== */
+/** ==== Camera (video-only, audio=false) ==== */
 export async function startCamera(
   engine: ZegoExpressEngine,
   params: { userID: string; quality?: 1 | 2 | 3 | 4 }
 ): Promise<{ stream: ZegoLocalStream; streamId: string }> {
   const cam = await engine.createZegoStream({
-    camera: { video: { quality: params.quality ?? 3 }, audio: false }, // 👈 video-only
+    camera: { video: { quality: params.quality ?? 3 }, audio: false },
   })
   const streamId = `${params.userID}_cam_${randomCode()}`
   engine.startPublishingStream(streamId, cam)
@@ -160,6 +161,31 @@ export async function stopCamera(
   } finally {
     if (stream) engine.destroyStream(stream)
     if (localVideoEl) localVideoEl.innerHTML = ""
+  }
+}
+
+/** ==== Audio-only ==== */
+export async function startAudio(
+  engine: ZegoExpressEngine,
+  params: { userID: string }
+): Promise<{ stream: ZegoLocalStream; streamId: string }> {
+  const audio = await engine.createZegoStream({
+    camera: { video: false, audio: true },
+  })
+  const streamId = `${params.userID}_audio_${randomCode()}`
+  engine.startPublishingStream(streamId, audio)
+  return { stream: audio, streamId }
+}
+
+export async function stopAudio(
+  engine: ZegoExpressEngine,
+  stream: ZegoLocalStream | null,
+  streamId: string | null,
+) {
+  try {
+    if (streamId) engine.stopPublishingStream(streamId)
+  } finally {
+    if (stream) engine.destroyStream(stream)
   }
 }
 
@@ -181,6 +207,7 @@ export async function startScreen(
   vtrack?.addEventListener("ended", () => params.onEnded?.())
   return { stream: screen, streamId }
 }
+
 export function stopScreen(
   engine: ZegoExpressEngine,
   stream: ZegoLocalStream | null,
@@ -193,32 +220,6 @@ export function stopScreen(
     if (stream) engine.destroyStream(stream)
     if (screenPreviewEl) screenPreviewEl.innerHTML = ""
   }
-}
-
-/** ==== Mic-only ==== */
-export async function startMicOnly(
-  engine: ZegoExpressEngine,
-  params: { userID: string }
-): Promise<{ stream: ZegoLocalStream; streamId: string }> {
-  // audio-only (không set video: false, để SDK tự cấu hình)
-  const mic = await engine.createZegoStream({ camera: { video: false, audio: true } })
-  const streamId = `${params.userID}_mic_${randomCode()}`
-  engine.startPublishingStream(streamId, mic)
-  return { stream: mic, streamId }
-}
-export async function stopMicOnly(
-  engine: ZegoExpressEngine,
-  stream: ZegoLocalStream | null,
-  streamId: string | null
-) {
-  try {
-    if (streamId) engine.stopPublishingStream(streamId)
-  } finally {
-    if (stream) engine.destroyStream(stream)
-  }
-}
-export function setMicMuted(engine: ZegoExpressEngine, muted: boolean) {
-  engine.muteMicrophone(muted)
 }
 
 /** ==== Destroy ==== */
