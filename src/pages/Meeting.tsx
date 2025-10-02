@@ -1,24 +1,29 @@
+// src/pages/MeetingPage.tsx
 import { Box, Heading, Stack, Text, Badge, Flex } from "@chakra-ui/react"
 import { useEffect, useRef, useState } from "react"
-import { type Participant, wireParticipants } from "@/utils/zegocloud"
+import { createEngine, type Participant, wireParticipants } from "@/utils/zegocloud"
 import { useSearchParams } from "react-router-dom"
 import UserCard from "@/components/UserCard"
 import useZegoEngine from "@/hooks/useZego"
 
 export default function MeetingPage() {
-  const engine = useZegoEngine()
   const [searchParams] = useSearchParams()
+  const engine = useZegoEngine()
   const userName = searchParams.get("userName") ?? "admin"
   const userID = "27098"
 
   const [participants, setParticipants] = useState<Participant[]>([])
 
-  const screenPreviewRef = useRef<HTMLDivElement>(null)
+  const zgRef = useRef<ReturnType<typeof createEngine> | null>(null)
 
   useEffect(() => {
+    zgRef.current = engine
     const cleanupHandlers = wireParticipants(engine, setParticipants)
 
-    return () => cleanupHandlers()
+    return () => {
+      cleanupHandlers()
+      zgRef.current = null
+    }
   }, [engine])
 
   return (
@@ -36,24 +41,9 @@ export default function MeetingPage() {
           <Flex>
             <UserCard self userID={userID} />
             {participants.map((p) => (
-              <UserCard userID={p.userID} />
+              <UserCard userID={p.userID} key={p.userID} />
             ))}
           </Flex>
-
-          <Heading as="h4" textAlign="center" mt={6}>
-            Your screen
-          </Heading>
-          <Box
-            ref={screenPreviewRef}
-            id="local-screen"
-            w="400px"
-            h="300px"
-            border="1px solid #3182ce"
-            position="relative"
-            display="flex"
-            marginInline="auto"
-            mb={4}
-          />
         </Box>
 
         <Box w={{ base: "100%", md: "280px" }} border="1px solid #ddd" p={3} borderRadius="md">

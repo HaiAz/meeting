@@ -1,28 +1,21 @@
-// ZegoEngineProvider.tsx
-import { useEffect, useRef, type PropsWithChildren } from "react"
-import { ZegoExpressEngine } from "zego-express-engine-webrtc"
-import { createEngine, destroyEngine } from "@/utils/zegocloud"
+import { useEffect, useState, type PropsWithChildren } from "react"
 import ZegoContext from "@/context/ZegoContext"
+import { createEngine, destroyEngine } from "@/utils/zegocloud"
+import type { ZegoExpressEngine } from "zego-express-engine-webrtc"
 
 export default function ZegoEngineProvider({ children }: PropsWithChildren) {
-  const engineRef = useRef<ZegoExpressEngine | null>(null)
-
-  // 👇 lazy init đồng bộ
-  if (!engineRef.current) {
-    engineRef.current = createEngine()
-  }
+  const [engine, setEngine] = useState<ZegoExpressEngine | null>(null)
 
   useEffect(() => {
-    const engine = engineRef.current!
+    const eg = createEngine()
+    setEngine(eg)
+
     return () => {
-      destroyEngine(engine)
-      engineRef.current = null
+      destroyEngine(eg)
+      setEngine(null)
     }
   }, [])
 
-  return (
-    <ZegoContext.Provider value={engineRef.current}>
-      {children}
-    </ZegoContext.Provider>
-  )
+  if (!engine) return null
+  return <ZegoContext.Provider value={engine}>{children}</ZegoContext.Provider>
 }

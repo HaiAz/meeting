@@ -177,7 +177,7 @@ export async function startScreen(
   return { stream: screen, streamId };
 }
 
-export async function stopScreen(
+export function stopScreen(
   engine: ZegoExpressEngine,
   stream: ZegoLocalStream | null,
   streamId: string | null,
