@@ -1,11 +1,12 @@
-// src/pages/MeetingPage.tsx
 import { Box, Heading, Stack, Text, Badge, Flex } from "@chakra-ui/react"
 import { useEffect, useRef, useState } from "react"
-import { createEngine, destroyEngine, type Participant, wireParticipants } from "@/utils/zegocloud"
+import { type Participant, wireParticipants } from "@/utils/zegocloud"
 import { useSearchParams } from "react-router-dom"
 import UserCard from "@/components/UserCard"
+import useZegoEngine from "@/hooks/useZego"
 
 export default function MeetingPage() {
+  const engine = useZegoEngine()
   const [searchParams] = useSearchParams()
   const userName = searchParams.get("userName") ?? "admin"
   const userID = "27098"
@@ -13,28 +14,12 @@ export default function MeetingPage() {
   const [participants, setParticipants] = useState<Participant[]>([])
 
   const screenPreviewRef = useRef<HTMLDivElement>(null)
-  const zgRef = useRef<ReturnType<typeof createEngine> | null>(null)
-  const initializedRef = useRef(false)
 
   useEffect(() => {
-    if (initializedRef.current) return
-    initializedRef.current = true
-
-    const engine = createEngine()
-    zgRef.current = engine
-
     const cleanupHandlers = wireParticipants(engine, setParticipants)
 
-    return () => {
-      try {
-        cleanupHandlers()
-      } finally {
-        destroyEngine(engine)
-        zgRef.current = null
-        initializedRef.current = false
-      }
-    }
-  }, [])
+    return () => cleanupHandlers()
+  }, [engine])
 
   return (
     <Box p={4}>

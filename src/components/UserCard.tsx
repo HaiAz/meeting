@@ -1,7 +1,7 @@
+import useZegoEngine from "@/hooks/useZego"
 import {
   type RemoteViewMap,
   createEngine,
-  destroyEngine,
   loginRoom,
   stopCamera,
   startCamera,
@@ -26,8 +26,7 @@ export default function UserCard(props: UserCardProps) {
   const [searchParams] = useSearchParams()
   const userName = searchParams.get("userName") ?? "admin"
   const navigate = useNavigate()
-
-  console.log("self ===", self)
+  const engine = useZegoEngine()
 
   const token =
     "04AAAAAGjd048ADNUWY/ruXhP4lNq9HACugVHVbD4XPNqp2Kez+GBPt0arQPJhE8MqfeNQ/1jxJMOEmx+Y1mMSvZvRJUr2gHWZAjV1Qgw3w2sxUCL/egLM5PHpu7C2+z8uT8klhBeeKB7xtCsRDxL4yAJKLRp7E1TQ1Uz1ygmOHIJI8dRtt8kV5IZdWAzGwozQCIy/YiZlgHVHHBmMjYMeFs/YxklYEY1wyYkRbRUOB/6SlqMde1MiaY5iWotf+KrITcgiiJfuAQ=="
@@ -48,15 +47,11 @@ export default function UserCard(props: UserCardProps) {
   const screenPreviewRef = useRef<HTMLDivElement>(null)
   const remoteContainerRef = useRef<HTMLDivElement>(null)
   const remoteViewMapRef = useRef<RemoteViewMap>(new Map())
-  const zgRef = useRef<ReturnType<typeof createEngine> | null>(null)
   const initializedRef = useRef(false)
 
   useEffect(() => {
     if (initializedRef.current) return
     initializedRef.current = true
-
-    const engine = createEngine()
-    zgRef.current = engine
 
     const cleanupHandlers = wireStreams(engine, {
       remoteContainer: remoteContainerRef.current,
@@ -64,26 +59,21 @@ export default function UserCard(props: UserCardProps) {
     })
 
     return () => {
-      try {
         cleanupHandlers()
-      } finally {
-        destroyEngine(engine)
-        zgRef.current = null
         initializedRef.current = false
-      }
     }
-  }, [])
+  }, [engine])
 
   // ==== Actions ====
   const onJoin = async () => {
-    if (!zgRef.current || roomID === undefined || userName === null) return
-    const ok = await loginRoom(zgRef.current, roomID, userName === "admin" ? token : token1, {
+    if (!engine || roomID === undefined || userName === null) return
+    const ok = await loginRoom(engine, roomID, userName === "admin" ? token : token1, {
       userID: userName === "admin" ? userID : userID1,
       userName,
     })
     if (!ok) return
 
-    // const { stream, streamId } = await startCamera(zgRef.current, {
+    // const { stream, streamId } = await startCamera(engine, {
     //   userID: userName === "admin" ? userID : userID1,
     //   localVideoEl: localVideoRef.current,
     //   quality: 3,
@@ -93,14 +83,14 @@ export default function UserCard(props: UserCardProps) {
   }
 
   const handleCamera = async () => {
-    if (!zgRef.current) return
+    if (!engine) return
     if (localCam) {
-      await stopCamera(zgRef.current, localCam, camStreamId, localVideoRef.current)
+      await stopCamera(engine, localCam, camStreamId, localVideoRef.current)
       setLocalCam(null)
       setCamStreamId("")
     } else {
       console.log("handle start camera")
-      const { stream, streamId } = await startCamera(zgRef.current, {
+      const { stream, streamId } = await startCamera(engine, {
         userID: userName === "admin" ? userID : userID1,
         quality: 3,
       })
@@ -111,13 +101,13 @@ export default function UserCard(props: UserCardProps) {
   }
 
   const handleShareScreen = async () => {
-    if (!zgRef.current) return
+    if (!engine) return
     if (localScreen) {
-      await stopScreen(zgRef.current, localScreen, screenStreamId, screenPreviewRef.current)
+      await stopScreen(engine, localScreen, screenStreamId, screenPreviewRef.current)
       setLocalScreen(null)
       setScreenStreamId("")
     } else {
-      const { stream, streamId } = await startScreen(zgRef.current, {
+      const { stream, streamId } = await startScreen(engine, {
         userID: userName === "admin" ? userID : userID1,
         screenPreviewEl: screenPreviewRef.current,
         withAudio: true,
@@ -125,8 +115,8 @@ export default function UserCard(props: UserCardProps) {
           // người dùng bấm "Stop sharing" từ UI → đồng bộ state
           setLocalScreen(null)
           setScreenStreamId("")
-          if (zgRef.current) {
-            stopScreen(zgRef.current, stream, streamId, screenPreviewRef.current).catch(() => {})
+          if (engine) {
+            stopScreen(engine, stream, streamId, screenPreviewRef.current).catch(() => {})
           }
         },
       })
@@ -136,14 +126,14 @@ export default function UserCard(props: UserCardProps) {
   }
 
   const onLeave = async () => {
-    if (!zgRef.current || roomID === undefined) return
-    await stopScreen(zgRef.current, localScreen, screenStreamId, screenPreviewRef.current)
-    await stopCamera(zgRef.current, localCam, camStreamId, localVideoRef.current)
+    if (!engine || roomID === undefined) return
+    await stopScreen(engine, localScreen, screenStreamId, screenPreviewRef.current)
+    await stopCamera(engine, localCam, camStreamId, localVideoRef.current)
     setLocalScreen(null)
     setScreenStreamId("")
     setLocalCam(null)
     setCamStreamId("")
-    await logoutRoom(zgRef.current, roomID)
+    await logoutRoom(engine, roomID)
     navigate("/")
   }
 

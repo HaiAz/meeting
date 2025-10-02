@@ -1,10 +1,10 @@
 import ZegoContext from "@/context/ZegoContext"
 import { useContext } from "react"
 
-export default function useZego() {
+export default function useZegoEngine() {
   const context = useContext(ZegoContext)
   if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider")
+    throw new Error("useZegoEngine must be used within an ZegoEngineProvider")
   }
   return context
 }
