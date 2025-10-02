@@ -1,46 +1,58 @@
-import type ZegoLocalStream from 'zego-express-engine-webrtc/sdk/code/zh/ZegoLocalStream.web';
-import { create } from 'zustand';
-import { immer } from 'zustand/middleware/immer';
+import { create } from "zustand"
+import { immer } from "zustand/middleware/immer"
+import type { Participant } from "@/utils/zegocloud"
 
-type MeetingState = {
-  localCamera: {
-    streamID: string,
-    localStream: ZegoLocalStream | null,
-  },
-  screenShare: {
-    screenStreamID: string,
-    screenStream: ZegoLocalStream | null,
-  }
-};
+type SlotKind = "cam" | "screen"
+export type UserSlots = { cam?: string | null; screen?: string | null }
 
-type MeetingActions = {
-  setLocalCamera(localCamera: MeetingState['localCamera']): void;
-  setScreenShare(screenShare: MeetingState['screenShare']): void;
-};
+type RoomState = {
+  users: Record<string, Participant>
+  slots: Record<string, UserSlots>
+}
 
-const initialValue: MeetingState = {
-  localCamera: {
-    streamID: '',
-    localStream: null,
-  },
-  screenShare: {
-    screenStreamID: '',
-    screenStream: null,
-  }
-};
+type RoomAction = {
+  upsertUsers: (list: Participant[]) => void
+  removeUsers: (ids: string[]) => void
+  setSlot: (userID: string, kind: SlotKind, streamId: string) => void
+  clearSlot: (userID: string, kind: SlotKind) => void
+  resetAll: () => void
+}
 
-const useSidebarStore = create(immer<MeetingState & MeetingActions>((set) => ({
-  ...initialValue,
-  setLocalCamera: ({ streamID, localStream }) => set((state) => {
-    state.localCamera.streamID = streamID;
-    state.localCamera.localStream = localStream;
-  }),
-  setScreenShare: ({ screenStreamID, screenStream }) => set((state) => {
-    state.screenShare.screenStreamID = screenStreamID;
-    state.screenShare.screenStream = screenStream;
-  }),
+export const useRoomStore = create(immer<RoomState & RoomAction>((set) => ({
+  users: {},
+  slots: {},
+
+  upsertUsers: (list) =>
+    set((s) => {
+      for (const u of list) {
+        s.users[u.userID] = u
+        s.slots[u.userID] ??= {}
+      }
+    }),
+
+  removeUsers: (ids) =>
+    set((s) => {
+      for (const id of ids) {
+        delete s.users[id]
+        delete s.slots[id]
+      }
+    }),
+
+  setSlot: (userID, kind, streamId) =>
+    set((s) => {
+      s.slots[userID] ??= {}
+      s.slots[userID][kind] = streamId
+    }),
+
+  clearSlot: (userID, kind) =>
+    set((s) => {
+      if (!s.slots[userID]) return
+      s.slots[userID][kind] = null
+    }),
+
+  resetAll: () =>
+    set((s) => {
+      s.users = {}
+      s.slots = {}
+    }),
 })));
-
-export {
-  useSidebarStore,
-};

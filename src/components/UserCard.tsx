@@ -8,183 +8,264 @@ import {
   stopScreen,
   startScreen,
   logoutRoom,
-  wireStreams,
 } from "@/utils/zegocloud"
-import { Avatar, Box, Button, Card, Heading, HStack, Stack } from "@chakra-ui/react"
-import { useState, useRef, useEffect } from "react"
-import { useNavigate, useParams, useSearchParams } from "react-router-dom"
+import { useRoomStore } from "@/store/meetingStore"
+import { Avatar, Box, Button, Card, HStack, Stack } from "@chakra-ui/react"
+import { useState, useRef, useEffect, useCallback, useMemo } from "react"
+import { useNavigate, useParams } from "react-router-dom"
 import type ZegoLocalStream from "zego-express-engine-webrtc/sdk/code/zh/ZegoLocalStream.web"
 
-type UserCardProps = {
+export type UserCardProps = {
   userID: string
+  userName: string
   self?: boolean
+  remoteViews: RemoteViewMap
 }
 
+const TOKENS: Record<"admin" | "abc" | "xyz", string> = {
+  admin:
+    "04AAAAAGjfhNEADIEsp3bu0S5X52AN3ACtTxUOSVgCg/SJvNJt+hrJwig3iq2OSuYmryKOXc8pxlPQqGL7vK5o3PrGfXhuXOIrAFT7kKvu8JKu2bx7riH7iB5X4pppN10KiGteIxr+PlfPaK44UThMRe0hm4ul/YB9n4qavNmpSW6U7/W6kAeo3naWhHYph78QyBN2DoixrR528TXL1jonfezXnYgofQYdyV6u5nscOqCIULsIgHDvjhdWk+evJzCoCFoO7CcB",
+  abc: "04AAAAAGjfhOEADJ0SzrCtdPmXBhq1OACvYq78/gComOrjduhfHtPHyGfXvTt55aeNptF+y6X3L8GZit3o3Xb6GdpDVptoyfUZ8FRiBl8geJKHPp5E9kYOJBfvFQ6E7I0SzC9Q7cr9zi/zTuzArYzt1I4BceGktYvwf90L6Y01ZySV2nk3g5ssTY5RNPyHPHvwDFUIj07WHRbIU8j7ggyRq59SzTTkAFKaKhfMK0DIsWxdsgfzDGDyeAom2JGVZroqJxYE6+EO9AE=",
+  xyz: "04AAAAAGjfMu8ADENht7JTb97fDGeVvQCuuKe3O4fyL3jCMtv/0o0GBoaGLiCRS/0mklbTHZAe3acdMi+EuCEXI3eaEpAuh2LX9NrO/bvyZFw+6K5k47FLfwKsV7qQmLbhkebYZOV89LwzNHlNNsbNchx85YWoo6/OGN8tl4HcpX4LFnHoQb2m2yh9uXf9cPNXWLNpoXa3NBiIFlZJSvmP+u9ig6GbyUzo2vC7fKbX2d3nGOKNkSyqIVHBinNfFOy9UC19TpvfAQ==",
+}
+const IDS: Record<"admin" | "abc" | "xyz", string> = { admin: "27098", abc: "12345", xyz: "54321" }
+
 export default function UserCard(props: UserCardProps) {
-  const { self } = props
+  const { userID, userName, self = false, remoteViews } = props
   const { roomID } = useParams()
-  const [searchParams] = useSearchParams()
-  const userName = searchParams.get("userName") ?? "admin"
   const navigate = useNavigate()
   const engine = useZegoEngine()
 
-  console.log("self ===", self)
+  // Store: chỉ lấy slots (cam/screen) của user này
+  const camStreamId = useRoomStore((s) => s.slots[userID]?.cam ?? null)
+  const screenStreamId = useRoomStore((s) => s.slots[userID]?.screen ?? null)
 
-  const adminToken =
-    "04AAAAAGjfJ0EADOAP91lgKYXlXd92tACvOVFwYwIK4AOZ2f8qCPg8bp9nWNiIyXBk0mtUBr/kFGBEz7UPdoMeRs8HlkKGJ+aBgEyY6X5D5YBZ0fzW+XC7kkV3kfxQwQWkjZ7PckTCIJzBMgAqodXYqbxWCS0oD2AI5sJ7qAfVMe6nEwvNenuCVGfPYJHKR9td3xzSgbgKzJ3cMR+OOiO8dW3EBADj/qppnlxAY4tUq3yIwy+b/jMJnaQQ/hKBwQa+22wN9tg5jAE="
-
-  const guestToken =
-    "04AAAAAGjfJ1MADEq5qiiqTGov74r0CwCuQjvpRZ5ETpu9ozGtkQ9scQhp8aFRRPJ0N63gfesP8JauhnP1NbNwJB9Gw9Kr33VXpcljCLeNKg3s5jaECyOLd7ATPT1fhLg/yXGxPEVBovuGQfiaraZ9hqRdwThZ2JAhDKkdK19sgujJ7tCu3qHnZHrfbOmwmpGp1AkSwu4hd6o98GX9AGkZyCEQOTikkUgyCfindaqGyZICSQgQGo2eyohqfXwmKOWf2eJD0BT1AQ=="
-
-  const userID = "27098"
-  const userID1 = "12345"
-
-  const [camStreamId, setCamStreamId] = useState<string>("")
-  const [screenStreamId, setScreenStreamId] = useState<string>("")
-
+  // Join/publish (self)
+  const [isJoined, setIsJoined] = useState(false)
+  const [isJoining, setIsJoining] = useState(false)
   const [localCam, setLocalCam] = useState<ZegoLocalStream | null>(null)
   const [localScreen, setLocalScreen] = useState<ZegoLocalStream | null>(null)
+  const [camPubId, setCamPubId] = useState<string>("")
+  const [screenPubId, setScreenPubId] = useState<string>("")
 
-  const localVideoRef = useRef<HTMLDivElement>(null)
-  const screenPreviewRef = useRef<HTMLDivElement>(null)
-  const remoteContainerRef = useRef<HTMLDivElement>(null)
-  const remoteViewMapRef = useRef<RemoteViewMap>(new Map())
+  const camRef = useRef<HTMLDivElement>(null)
+  const screenRef = useRef<HTMLDivElement>(null)
   const zgRef = useRef<ReturnType<typeof createEngine> | null>(null)
 
   useEffect(() => {
     zgRef.current = engine
-
-    const cleanupHandlers = wireStreams(engine, {
-      remoteContainer: remoteContainerRef.current,
-      remoteViewMap: remoteViewMapRef.current,
-    })
-
+    const onRoomStateChanged = (_room: string, state: string) => {
+      if (state === "CONNECTED") setIsJoined(true)
+      else if (state === "DISCONNECTED") setIsJoined(false)
+    }
+    engine.on("roomStateChanged", onRoomStateChanged)
     return () => {
-      cleanupHandlers()
+      engine.off?.("roomStateChanged", onRoomStateChanged)
       zgRef.current = null
     }
   }, [engine])
 
-  // ==== Actions ====
-  const onJoin = async () => {
-    if (!zgRef.current || roomID === undefined || userName === null) return
-    const ok = await loginRoom(
-      zgRef.current,
-      roomID,
-      userName === "admin" ? adminToken : guestToken,
-      {
-        userID: userName === "admin" ? userID : userID1,
-        userName,
-      }
-    )
-    console.log("ok ===", ok)
-    if (!ok) return
-  }
+  // local cam preview
+  useEffect(() => {
+    if (localCam && camRef.current) localCam.playVideo(camRef.current)
+  }, [localCam])
 
-  const handleCamera = async () => {
-    if (!zgRef.current) return
+  // local screen preview (container luôn mounted khi self)
+  useEffect(() => {
+    if (localScreen && screenRef.current) {
+      localScreen.playVideo(screenRef.current)
+    } else if (screenRef.current && self) {
+      // chỉ dọn khi self; remote sẽ dọn theo streamId thay đổi
+      screenRef.current.innerHTML = ""
+    }
+  }, [localScreen, self])
+
+  // remote cam
+  useEffect(() => {
+    if (self) return
+    const el = camRef.current
+    if (!el) return
+    if (!camStreamId) {
+      el.innerHTML = ""
+      return
+    }
+    const view = remoteViews.get(camStreamId)
+    view?.playVideo(el)
+    return () => {
+      if (el) el.innerHTML = ""
+    }
+  }, [self, camStreamId, remoteViews])
+
+  // remote screen
+  useEffect(() => {
+    if (self) return
+    const el = screenRef.current
+    if (!el) return
+    if (!screenStreamId) {
+      el.innerHTML = ""
+      return
+    }
+    const view = remoteViews.get(screenStreamId)
+    view?.playVideo(el)
+    return () => {
+      if (el) el.innerHTML = ""
+    }
+  }, [self, screenStreamId, remoteViews])
+
+  // ==== actions (self) ====
+  const tokenKey = useMemo<"admin" | "abc" | "xyz">(
+    () => (userName === "admin" ? "admin" : userName === "abc" ? "abc" : "xyz"),
+    [userName]
+  )
+  const myUserID = useMemo(() => IDS[tokenKey], [tokenKey])
+
+  const onJoin = useCallback(async () => {
+    if (!self || !zgRef.current || roomID == null || isJoining || isJoined) return
+    setIsJoining(true)
+    try {
+      const ok = await loginRoom(zgRef.current, roomID, TOKENS[tokenKey], {
+        userID: myUserID,
+        userName,
+      })
+      if (ok) setIsJoined(true)
+    } finally {
+      setIsJoining(false)
+    }
+  }, [self, roomID, tokenKey, myUserID, userName, isJoining, isJoined])
+
+  const handleCamera = useCallback(async () => {
+    if (!self || !zgRef.current || !isJoined) return
     if (localCam) {
-      await stopCamera(zgRef.current, localCam, camStreamId, localVideoRef.current)
+      await stopCamera(zgRef.current, localCam, camPubId, camRef.current)
       setLocalCam(null)
-      setCamStreamId("")
+      setCamPubId("")
     } else {
       const { stream, streamId } = await startCamera(zgRef.current, {
-        userID: userName === "admin" ? userID : userID1,
+        userID: myUserID,
         quality: 3,
       })
       setLocalCam(stream)
-      setCamStreamId(streamId)
+      setCamPubId(streamId)
+      if (camRef.current) stream.playVideo(camRef.current)
     }
-  }
+  }, [self, isJoined, localCam, camPubId, myUserID])
 
-  const handleShareScreen = async () => {
-    if (!zgRef.current) return
+  const handleShareScreen = useCallback(async () => {
+    if (!self || !zgRef.current || !isJoined) return
     if (localScreen) {
-      await stopScreen(zgRef.current, localScreen, screenStreamId, screenPreviewRef.current)
+      stopScreen(zgRef.current, localScreen, screenPubId, screenRef.current)
       setLocalScreen(null)
-      setScreenStreamId("")
+      setScreenPubId("")
     } else {
       const { stream, streamId } = await startScreen(zgRef.current, {
-        userID: userName === "admin" ? userID : userID1,
-        screenPreviewEl: screenPreviewRef.current,
+        userID: myUserID,
+        screenPreviewEl: screenRef.current,
         withAudio: true,
         onEnded: () => {
-          // người dùng bấm "Stop sharing" từ UI → đồng bộ state
           setLocalScreen(null)
-          setScreenStreamId("")
-          if (zgRef.current) {
-            stopScreen(zgRef.current, stream, streamId, screenPreviewRef.current)
-          }
+          setScreenPubId("")
+          if (zgRef.current) stopScreen(zgRef.current, stream, streamId, screenRef.current)
         },
       })
       setLocalScreen(stream)
-      setScreenStreamId(streamId)
+      setScreenPubId(streamId)
     }
-  }
+  }, [self, isJoined, localScreen, screenPubId, myUserID])
 
-  const onLeave = async () => {
-    if (!zgRef.current || roomID === undefined) return
-    stopScreen(zgRef.current, localScreen, screenStreamId, screenPreviewRef.current)
-    await stopCamera(zgRef.current, localCam, camStreamId, localVideoRef.current)
+  const onLeave = useCallback(async () => {
+    if (!self || !zgRef.current || roomID == null || !isJoined) return
+    stopScreen(zgRef.current, localScreen, screenPubId, screenRef.current)
+    await stopCamera(zgRef.current, localCam, camPubId, camRef.current)
     setLocalScreen(null)
-    setScreenStreamId("")
+    setScreenPubId("")
     setLocalCam(null)
-    setCamStreamId("")
+    setCamPubId("")
     await logoutRoom(zgRef.current, roomID)
+    setIsJoined(false)
     navigate("/")
-  }
-
-  useEffect(() => {
-    if (localCam && localVideoRef.current) {
-      localCam.playVideo(localVideoRef.current)
-    }
-  }, [localCam])
+  }, [self, roomID, isJoined, localScreen, screenPubId, localCam, camPubId, navigate])
 
   return (
-    <Card.Root width="320px">
+    <Card.Root width="360px">
       <Card.Body>
-        <Stack direction="row" justify="center" gap={3} mb={4} wrap="wrap">
-          <Button onClick={onJoin}>Join & Publish Camera</Button>
-          <Button onClick={handleCamera}>{localCam ? "Stop Camera" : "Start Camera"}</Button>
-          <Button onClick={handleShareScreen}>
-            {localScreen ? "Stop Screen" : "Start Sharing"}
-          </Button>
-          <Button onClick={onLeave}>Leave Room</Button>
-        </Stack>
-        <Heading as="h4" textAlign="center" mt={6}>
-          Your screen
-        </Heading>
-        <Box
-          ref={screenPreviewRef}
-          id="local-screen"
-          w="400px"
-          h="300px"
-          border="1px solid #3182ce"
-          position="relative"
-          display="flex"
-          marginInline="auto"
-          mb={4}
-        />
-        {localCam ? (
+        {self && (
+          <Stack direction="row" justify="center" gap={3} mb={4} wrap="wrap">
+            <Button onClick={onJoin} disabled={isJoined || isJoining} loading={isJoining}>
+              {isJoined ? "Joined" : "Join"}
+            </Button>
+            <Button onClick={handleCamera} disabled={!isJoined}>
+              {localCam ? "Stop Camera" : "Start Camera"}
+            </Button>
+            <Button onClick={handleShareScreen} disabled={!isJoined}>
+              {localScreen ? "Stop Screen" : "Start Sharing"}
+            </Button>
+            <Button onClick={onLeave} disabled={!isJoined}>
+              Leave Room
+            </Button>
+          </Stack>
+        )}
+
+        {/* Camera tile */}
+        {self ? (
+          localCam ? (
+            <Box
+              ref={camRef}
+              id={`${userID}_cam_local`}
+              w="340px"
+              h="240px"
+              border="1px solid #e53e3e"
+              mx="auto"
+              mb={3}
+              borderRadius="md"
+            />
+          ) : (
+            <HStack mb="3" gap="3" marginInline="auto">
+              {/* Nếu dùng Chakra Avatar chính tắc: <Avatar name={userName} /> */}
+              <Avatar.Root>
+                {userName}
+                <Avatar.Image src="https://images.unsplash.com/photo-1511806754518-53bada35f930" />
+                <Avatar.Fallback name={userName} />
+              </Avatar.Root>
+            </HStack>
+          )
+        ) : camStreamId ? (
           <Box
-            ref={localVideoRef}
-            id={`${userID}_camera_${camStreamId}`}
-            w="400px"
-            h="300px"
+            ref={camRef}
+            id={`remote-${camStreamId}`}
+            w="340px"
+            h="240px"
             border="1px solid #e53e3e"
             mx="auto"
-            mb={4}
-            position="relative"
+            mb={3}
+            borderRadius="md"
           />
         ) : (
-          <HStack mb="6" gap="3" marginInline="auto">
+          <HStack mb="3" gap="3" marginInline="auto">
             <Avatar.Root>
               {userName}
-              <Avatar.Image src="https://images.unsplash.com/photo-1511806754518-53bada35f930" />
               <Avatar.Fallback name={userName} />
             </Avatar.Root>
           </HStack>
         )}
+
+        {/* Screen tile: self luôn mounted để tránh race-condition; remote mount theo stream */}
+        <Box
+          ref={screenRef}
+          id={
+            self
+              ? `${userID}_screen_local`
+              : screenStreamId
+              ? `remote-${screenStreamId}`
+              : undefined
+          }
+          w="340px"
+          h="220px"
+          border="1px solid #3182ce"
+          mx="auto"
+          mb={1}
+          borderRadius="md"
+          display={self ? (localScreen ? "flex" : "none") : screenStreamId ? "flex" : "none"}
+        />
       </Card.Body>
     </Card.Root>
   )
