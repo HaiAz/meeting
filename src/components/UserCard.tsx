@@ -199,6 +199,9 @@ export default function UserCard(props: UserCardProps) {
             <Button onClick={handleShareScreen} disabled={!isJoined}>
               {localScreen ? "Stop Screen" : "Start Sharing"}
             </Button>
+            <Button onClick={handle} disabled={!isJoined}>
+              {localScreen ? "Stop Screen" : "Start Sharing"}
+            </Button>
             <Button onClick={onLeave} disabled={!isJoined}>
               Leave Room
             </Button>

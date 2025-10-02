@@ -2,8 +2,8 @@ import { create } from "zustand"
 import { immer } from "zustand/middleware/immer"
 import type { Participant } from "@/utils/zegocloud"
 
-type SlotKind = "cam" | "screen"
-export type UserSlots = { cam?: string | null; screen?: string | null }
+type SlotKind = "cam" | "screen" | "mic";
+export type UserSlots = { cam?: string | null; screen?: string | null, mic?: string | null }
 
 type RoomState = {
   users: Record<string, Participant>
@@ -38,17 +38,11 @@ export const useRoomStore = create(immer<RoomState & RoomAction>((set) => ({
       }
     }),
 
-  setSlot: (userID, kind, streamId) =>
-    set((s) => {
-      s.slots[userID] ??= {}
-      s.slots[userID][kind] = streamId
-    }),
+  setSlot: (userID: string, kind: SlotKind, id: string) =>
+    set((s) => { s.slots[userID] ??= {}; s.slots[userID]![kind] = id; }),
 
-  clearSlot: (userID, kind) =>
-    set((s) => {
-      if (!s.slots[userID]) return
-      s.slots[userID][kind] = null
-    }),
+  clearSlot: (userID: string, kind: SlotKind) =>
+    set((s) => { if (s.slots[userID]) delete s.slots[userID]![kind]; }),
 
   resetAll: () =>
     set((s) => {
