@@ -10,7 +10,7 @@ import {
 import { useSearchParams } from "react-router-dom"
 import UserCard from "@/components/UserCard"
 import useZegoEngine from "@/hooks/useZego"
-import { useRoomStore } from "@/store/meetingStore"
+import { useRoomStore } from "@/store/roomStore"
 
 export default function MeetingPage() {
   const [searchParams] = useSearchParams()

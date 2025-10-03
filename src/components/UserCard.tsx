@@ -11,7 +11,7 @@ import {
   stopAudio,
   startAudio,
 } from "@/utils/zegocloud"
-import { useRoomStore } from "@/store/meetingStore"
+import { useRoomStore } from "@/store/roomStore"
 import { Avatar, Box, Button, Card, HStack, Stack } from "@chakra-ui/react"
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { useNavigate, useParams } from "react-router-dom"
@@ -26,9 +26,9 @@ export type UserCardProps = {
 
 const TOKENS: Record<"admin" | "abc" | "xyz", string> = {
   admin:
-    "04AAAAAGjfhNEADIEsp3bu0S5X52AN3ACtTxUOSVgCg/SJvNJt+hrJwig3iq2OSuYmryKOXc8pxlPQqGL7vK5o3PrGfXhuXOIrAFT7kKvu8JKu2bx7riH7iB5X4pppN10KiGteIxr+PlfPaK44UThMRe0hm4ul/YB9n4qavNmpSW6U7/W6kAeo3naWhHYph78QyBN2DoixrR528TXL1jonfezXnYgofQYdyV6u5nscOqCIULsIgHDvjhdWk+evJzCoCFoO7CcB",
-  abc: "04AAAAAGjfhOEADJ0SzrCtdPmXBhq1OACvYq78/gComOrjduhfHtPHyGfXvTt55aeNptF+y6X3L8GZit3o3Xb6GdpDVptoyfUZ8FRiBl8geJKHPp5E9kYOJBfvFQ6E7I0SzC9Q7cr9zi/zTuzArYzt1I4BceGktYvwf90L6Y01ZySV2nk3g5ssTY5RNPyHPHvwDFUIj07WHRbIU8j7ggyRq59SzTTkAFKaKhfMK0DIsWxdsgfzDGDyeAom2JGVZroqJxYE6+EO9AE=",
-  xyz: "04AAAAAGjfMu8ADENht7JTb97fDGeVvQCuuKe3O4fyL3jCMtv/0o0GBoaGLiCRS/0mklbTHZAe3acdMi+EuCEXI3eaEpAuh2LX9NrO/bvyZFw+6K5k47FLfwKsV7qQmLbhkebYZOV89LwzNHlNNsbNchx85YWoo6/OGN8tl4HcpX4LFnHoQb2m2yh9uXf9cPNXWLNpoXa3NBiIFlZJSvmP+u9ig6GbyUzo2vC7fKbX2d3nGOKNkSyqIVHBinNfFOy9UC19TpvfAQ==",
+    "04AAAAAGjggVUADMvXqd+Oy/p8sPpLOwCvGYA/4jJVsS/fbnqPnk4R6soqRqNAJq7OdfXnYoVJopOJ8su3VXIN6scnTdsgA0HVgqwCnySsbXBq1RKewyigvSzpCWKPO2eAkc4Vnt8ngZC0BBG7fKS1VWGpeahp3i873hD7La5AJVGwe6mSdWWq62B9yKutd7cxEGeSJxDRFuNM6O2DE///PI6ZTdPfPRQ8XL0aZRDFNaYefRcfldHz/QtdyYXv1yJAj5wmoItVUQE=",
+  abc: "04AAAAAGjggWcADOH/NFKO4fAmo2RvmwCvu1H7LT5cSqr2rfbFARRRBHMSZ8i9YKT38Gd4ezJfM6iCgVAtunxl40WwiTm78w+pHlDpk0TU8FF9HTTS321hpN6WDh8bsaFShgDk68wM/xdegNQVCB4rjKJ37or7hNqMLsvnaGa2iY/LHpKnLikmgPPgBv/jgyOhGaJ6y9KIcpwvM5jiRwtgd/s/C/R5Wq5wPtDJip0l/qUwx9cCrJAUnTFQg7vUirrr7sj46z6ZDAE=",
+  xyz: "04AAAAAGjggXAADD4QXAy2rfbAnbdvXwCvLVq3P8vhy7bC7D/vS2mZ8RvPl8a5/7d0OXhcJfztcv+TSNHBToLWOX1uuiTy9G+Ae/wZUOo4w9EigkEOvGilYNx5zVk8hMLXVNcPciiYg2ff3zGRjaM23VXdmHQjzpmEDos0ik3mVxsD7/zR5odcLAnMV6b5WJF7U9HcENqqQiMm4rzr+IDRWv5jCjUBLCUUsSrHCATFVL/CGukjg+wX3DZetIRPRRFBhfhrKawyQwE=",
 }
 const IDS: Record<"admin" | "abc" | "xyz", string> = { admin: "27098", abc: "12345", xyz: "54321" }
 
@@ -74,7 +74,25 @@ export default function UserCard(props: UserCardProps) {
   // local cam preview
   useEffect(() => {
     if (localCam && camRef.current) localCam.playVideo(camRef.current)
-  }, [localCam])
+  }, [camStreamId, engine, localCam])
+
+  // useEffect(() => {
+  //   if (camStreamId) {
+  //     engine.startPlayingStream(camStreamId).then((remoteStream) => {
+  //       const audioTracks = remoteStream.getAudioTracks?.() || []
+  //       console.log("audioTracks=", audioTracks)
+  //     })
+  //   }
+  // }, [camStreamId, engine])
+
+  useEffect(() => {
+    if (audioStreamId) {
+      engine.startPlayingStream(audioStreamId).then((remoteStream) => {
+        const audioTracks = remoteStream.getAudioTracks?.() || []
+        console.log("audioTracks=", audioTracks)
+      })
+    }
+  }, [audioStreamId, engine])
 
   // local audio preview
   useEffect(() => {
@@ -102,6 +120,7 @@ export default function UserCard(props: UserCardProps) {
     }
     const view = remoteViews.get(camStreamId)
     view?.playVideo(el)
+
     return () => {
       if (el) el.innerHTML = ""
     }
@@ -118,6 +137,7 @@ export default function UserCard(props: UserCardProps) {
     }
     const view = remoteViews.get(audioStreamId)
     view?.playVideo(el)
+
     return () => {
       if (el) el.innerHTML = ""
     }
@@ -134,6 +154,7 @@ export default function UserCard(props: UserCardProps) {
     }
     const view = remoteViews.get(screenStreamId)
     view?.playVideo(el)
+
     return () => {
       if (el) el.innerHTML = ""
     }
@@ -230,6 +251,18 @@ export default function UserCard(props: UserCardProps) {
     navigate("/")
   }, [self, roomID, isJoined, localScreen, screenPubId, localCam, camPubId, navigate])
 
+  const localMonitorRef = useRef<HTMLAudioElement>(null)
+
+  useEffect(() => {
+    if (!self || !localAudio || !localMonitorRef.current) return
+    const el = localMonitorRef.current
+    el.srcObject = localAudio.stream as MediaStream // gán trực tiếp
+    el.autoplay = true
+    el.muted = false // chỉ bật nếu bạn đeo tai nghe để tránh echo
+    el.volume = 1
+    el.play?.().catch(() => {}) // “kick” play sau user gesture
+  }, [self, localAudio])
+
   return (
     <Card.Root width="360px">
       <Card.Body>
@@ -318,19 +351,16 @@ export default function UserCard(props: UserCardProps) {
         <Box
           ref={audioRef}
           id={
-            self
-              ? `${userID}_audio_local`
-              : audioStreamId
-              ? `remote-${audioStreamId}`
-              : undefined
+            self ? `${userID}_audio_local` : audioStreamId ? `remote-${audioStreamId}` : undefined
           }
-          w="1px"
-          h="1px"
+          w="20px"
+          h="20px"
           border="1px solid #3182ce"
           mx="auto"
           mb={1}
           borderRadius="md"
-          />
+        />
+        {/* <audio ref={localMonitorRef} style={{ width: 20, height: 20, background: "red" }} /> */}
       </Card.Body>
     </Card.Root>
   )

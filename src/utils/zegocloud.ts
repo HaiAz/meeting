@@ -82,11 +82,13 @@ export function wireStreams(engine: ZegoExpressEngine, opts: WireStreamsOpts) {
     updateType: "ADD" | "DELETE",
     streamList: Array<{ streamID: string }>
   ) => {
+    console.log('updateType ===', updateType);
     if (updateType === "ADD") {
       for (const s of streamList) {
         const id = s.streamID
         if (remoteViewMap.has(id)) continue
         const meta = parseStreamId(id)
+        engine.mutePlayStreamAudio(id, false)
 
         const remoteStream = await engine.startPlayingStream(id)
         const view = engine.createRemoteStreamView(remoteStream)
@@ -112,6 +114,21 @@ export function wireStreams(engine: ZegoExpressEngine, opts: WireStreamsOpts) {
   }
 
   engine.on("roomStreamUpdate", onRoomStreamUpdate)
+
+  engine.on('playQualityUpdate', (streamID, s) => {
+    console.log('[playQuality]', streamID)
+    console.log('seting === audio quality ====', s);
+  })
+
+  engine.on("publisherStateUpdate", (res) => {
+    console.log("[publisherStateUpdate]", res);
+  });
+  engine.on("playerStateUpdate", (res) => {
+    console.log("[playerStateUpdate]", res);
+  });
+  engine.on("roomStateChanged", (rid, reason, code) => {
+    console.log("[roomStateChanged]", rid, reason, code);
+  });
 
   return () => {
     for (const id of Array.from(addedIds)) {
@@ -143,7 +160,7 @@ export async function startCamera(
   params: { userID: string; quality?: 1 | 2 | 3 | 4 }
 ): Promise<{ stream: ZegoLocalStream; streamId: string }> {
   const cam = await engine.createZegoStream({
-    camera: { video: { quality: params.quality ?? 3 }, audio: false },
+    camera: { video: { quality: params.quality ?? 3 }, audio: true },
   })
   const streamId = `${params.userID}_cam_${randomCode()}`
   engine.startPublishingStream(streamId, cam)
