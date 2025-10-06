@@ -1,7 +1,7 @@
+// components/UserCard.tsx
 import useZegoEngine from "@/hooks/useZego"
 import {
   type RemoteViewMap,
-  // type RemoteMedia, // (không cần import type này nếu bạn không dùng trực tiếp)
   createEngine,
   loginRoom,
   stopCamera,
@@ -18,6 +18,82 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import type ZegoLocalStream from "zego-express-engine-webrtc/sdk/code/zh/ZegoLocalStream.web"
 
+function isStreamAudioOn(stream?: MediaStream | null): boolean {
+  if (!stream) return false
+  const tracks = stream.getAudioTracks()
+  if (tracks.length === 0) return false
+  const t = tracks[0]
+  return t.enabled && t.readyState === "live"
+}
+
+function mountMediaToBox(
+  box: HTMLElement,
+  media: MediaStream,
+  opts?: { muted?: boolean; volume?: number; sinkId?: string }
+) {
+  // clear cũ
+  box.innerHTML = ""
+
+  const a = document.createElement("audio")
+  a.autoplay = true
+  a.controls = false
+  // a.playsInline = true as any
+  a.srcObject = media
+  a.muted = !!opts?.muted
+  a.volume = opts?.muted ? 0 : opts?.volume ?? 1
+  box.appendChild(a)
+
+  // chọn thiết bị output nếu có
+  if (!opts?.muted && typeof a.setSinkId === "function") {
+    try {
+      a.setSinkId(opts?.sinkId || "default")
+    } catch (err) {
+      console.log("err ===", err)
+      throw new Error()
+    }
+  }
+
+  const tryPlay = () => a.play().catch(() => {})
+  tryPlay()
+  document.addEventListener("click", tryPlay, { once: true })
+}
+
+function unmountBox(box?: HTMLElement | null) {
+  if (!box) return
+  box.innerHTML = ""
+}
+
+// Helper: mute/unmute toàn bộ media con trong 1 container
+function muteAllMediaIn(el: HTMLElement, mute: boolean) {
+  el.querySelectorAll<HTMLMediaElement>("video, audio").forEach((m) => {
+    m.muted = mute
+    m.volume = mute ? 0 : 1
+    if (m.tagName === "VIDEO") {
+      ;(m as HTMLVideoElement).playsInline = true
+      m.setAttribute("playsinline", "")
+      m.setAttribute("webkit-playsinline", "")
+    }
+  })
+}
+
+// Helper: bảo đảm phần tử do SDK chèn sẽ thực sự play sau user-gesture
+function ensureMediaPlayable(container: HTMLElement, muted = false) {
+  const media = container.querySelector("video, audio") as HTMLMediaElement | null
+  if (!media) return
+  media.muted = muted
+  media.volume = muted ? 0 : 1
+  media.autoplay = true
+  if (media.tagName === "VIDEO") {
+    ;(media as HTMLVideoElement).playsInline = true
+    media.setAttribute("playsinline", "")
+    media.setAttribute("webkit-playsinline", "")
+  }
+  const tryPlay = () => media.play?.().catch(() => {})
+  tryPlay()
+  // Né autoplay: gọi lại sau click đầu tiên
+  document.addEventListener("click", tryPlay, { once: true })
+}
+
 export type UserCardProps = {
   userID: string
   userName: string
@@ -33,27 +109,13 @@ const TOKENS: Record<"admin" | "abc" | "xyz", string> = {
 }
 const IDS: Record<"admin" | "abc" | "xyz", string> = { admin: "27098", abc: "12345", xyz: "54321" }
 
-function ensureMediaPlayable(container: HTMLElement) {
-  const media = container.querySelector("video, audio") as HTMLMediaElement | null
-  if (!media) return
-  media.muted = false
-  media.volume = 1
-  media.autoplay = true
-  if (media.tagName === "VIDEO") {
-    ;(media as HTMLVideoElement).playsInline = true
-    media.setAttribute("playsinline", "")
-    media.setAttribute("webkit-playsinline", "")
-  }
-  media.play?.().catch(() => {})
-}
-
 export default function UserCard(props: UserCardProps) {
   const { userID, userName, self = false, remoteViews } = props
   const { roomID } = useParams()
   const navigate = useNavigate()
   const engine = useZegoEngine()
 
-  // Store: chỉ lấy slots (cam/screen) của user này
+  // slots của user này (đến từ store khi wireStreams setSlot)
   const camStreamId = useRoomStore((s) => s.slots[userID]?.cam ?? null)
   const screenStreamId = useRoomStore((s) => s.slots[userID]?.screen ?? null)
   const audioStreamId = useRoomStore((s) => s.slots[userID]?.audio ?? null)
@@ -86,95 +148,128 @@ export default function UserCard(props: UserCardProps) {
     }
   }, [engine])
 
-  // local cam preview
-  useEffect(() => {
-    if (localCam && camRef.current) localCam.playVideo(camRef.current)
-  }, [localCam])
+  // ===== LOCAL PREVIEW =====
 
-  // local audio preview
+  // Local cam
   useEffect(() => {
-    if (localAudio && audioRef.current) localAudio.playVideo(audioRef.current)
-  }, [localAudio])
-
-  // local screen preview (container luôn mounted khi self)
-  useEffect(() => {
-    if (localScreen && screenRef.current) {
-      localScreen.playVideo(screenRef.current)
-    } else if (screenRef.current && self) {
-      // chỉ dọn khi self; remote sẽ dọn theo streamId thay đổi
-      screenRef.current.innerHTML = ""
+    if (!self) return
+    const box = camRef.current
+    if (!box) return
+    box.innerHTML = ""
+    if (!localCam) return
+    localCam.playVideo(box)
+    // Local cam thì mute DOM để không tự nghe track audio trong stream cam
+    muteAllMediaIn(box, true)
+    return () => {
+      box.innerHTML = ""
     }
-  }, [localScreen, self])
+  }, [self, localCam])
 
-  // remote cam
+  // Local screen
   useEffect(() => {
-    if (self) return
-    const el = camRef.current
-    if (!el) return
-    if (!camStreamId) {
-      el.innerHTML = ""
+    if (!self) return
+    const box = screenRef.current
+    if (!box) return
+    box.innerHTML = ""
+    if (!localScreen) return
+    localScreen.playVideo(box)
+    // screen có thể có audio (nếu withAudio: true); mute DOM cũng ok
+    muteAllMediaIn(box, true)
+    return () => {
+      box.innerHTML = ""
+    }
+  }, [self, localScreen])
+
+  // Local audio (mic-only): mount trực tiếp, muted để không nghe chính mình
+  useEffect(() => {
+    if (!self) return
+    const box = audioRef.current
+    if (!box) return
+
+    if (!localAudio) {
+      unmountBox(box)
       return
     }
+
+    // local: muted
+    mountMediaToBox(box, localAudio.stream as MediaStream, { muted: true, volume: 0 })
+    return () => {
+      unmountBox(box)
+    }
+  }, [self, localAudio])
+
+  // ===== REMOTE PLAY =====
+
+  // Remote cam
+  useEffect(() => {
+    if (self) return
+    const box = camRef.current
+    if (!box) return
+    box.innerHTML = ""
+    if (!camStreamId) return
     const item = remoteViews.get(camStreamId)
-    item?.view.playVideo(el)
-    ensureMediaPlayable(el)
+    if (!item) return
+
+    // ZEGO render
+    item.view.playVideo(box)
+    // Ensure phát được (unmute DOM + play sau gesture)
+    ensureMediaPlayable(box, /*muted*/ false)
 
     return () => {
-      if (el) el.innerHTML = ""
+      box.innerHTML = ""
     }
   }, [self, camStreamId, remoteViews])
 
-  // remote audio
+  // Remote screen
   useEffect(() => {
     if (self) return
-    const el = audioRef.current
-    if (!el) return
-    if (!audioStreamId) {
-      el.innerHTML = ""
-      return
-    }
-    const item = remoteViews.get(audioStreamId)
-    item?.view.playVideo(el)
-    ensureMediaPlayable(el)
-
-    // Fallback: nếu SDK không chèn element cho audio-only, tự gắn <audio>
-    setTimeout(() => {
-      const media = el.querySelector("video, audio") as HTMLMediaElement | null
-      if (!media && item?.stream) {
-        const a = document.createElement("audio")
-        a.autoplay = true
-        a.muted = false
-        a.volume = 1
-        a.srcObject = item.stream
-        el.appendChild(a)
-        a.play?.().catch(() => {})
-      }
-    }, 0)
-
-    return () => {
-      if (el) el.innerHTML = ""
-    }
-  }, [self, audioStreamId, remoteViews])
-
-  // remote screen
-  useEffect(() => {
-    if (self) return
-    const el = screenRef.current
-    if (!el) return
-    if (!screenStreamId) {
-      el.innerHTML = ""
-      return
-    }
+    const box = screenRef.current
+    if (!box) return
+    box.innerHTML = ""
+    if (!screenStreamId) return
     const item = remoteViews.get(screenStreamId)
-    item?.view.playVideo(el)
-    ensureMediaPlayable(el)
+    if (!item) return
 
+    item.view.playVideo(box)
+    ensureMediaPlayable(box, false)
     return () => {
-      if (el) el.innerHTML = ""
+      box.innerHTML = ""
     }
   }, [self, screenStreamId, remoteViews])
 
-  // ==== actions (self) ====
+  // Remote audio: mount trực tiếp, KHÔNG mute
+  useEffect(() => {
+    if (self) return
+    const box = audioRef.current
+    if (!box) return
+
+    if (!audioStreamId) {
+      unmountBox(box)
+      return
+    }
+
+    const item = remoteViews.get(audioStreamId)
+    if (!item?.stream) {
+      unmountBox(box)
+      return
+    }
+
+    // remote: unmuted (volume = 1)
+    mountMediaToBox(box, item.stream, { muted: false, volume: 1, sinkId: "default" })
+
+    // debug
+    const tracks = item.stream.getAudioTracks()
+    console.log(
+      "remote audio tracks:",
+      tracks.map((t) => ({ enabled: t.enabled, readyState: t.readyState, label: t.label }))
+    )
+
+    return () => {
+      unmountBox(box)
+    }
+  }, [self, audioStreamId, remoteViews])
+
+  // ===== ACTIONS (self) =====
   const tokenKey = useMemo<"admin" | "abc" | "xyz">(
     () => (userName === "admin" ? "admin" : userName === "abc" ? "abc" : "xyz"),
     [userName]
@@ -212,37 +307,18 @@ export default function UserCard(props: UserCardProps) {
     }
   }, [self, isJoined, localCam, camPubId, myUserID])
 
-  const localMonitorRef = useRef<HTMLAudioElement>(null)
-
   const handleAudio = useCallback(async () => {
     if (!self || !zgRef.current || !isJoined) return
+
     if (localAudio) {
       await stopAudio(zgRef.current, localAudio, audioPubId)
       setLocalAudio(null)
       setAudioPubId("")
+      // Box sẽ clear bởi effect localAudio (unmountBox)
     } else {
-      const { stream, streamId } = await startAudio(zgRef.current, {
-        userID: myUserID,
-      })
+      const { stream, streamId } = await startAudio(zgRef.current, { userID: myUserID })
       setLocalAudio(stream)
       setAudioPubId(streamId)
-
-      // Preview local qua SDK (có thể không render element cho audio-only)
-      if (audioRef.current) stream.playVideo(audioRef.current)
-
-      // 🔑 Monitor local mic: gán srcObject + play NGAY trong click (user gesture)
-      const a = localMonitorRef.current
-      if (a) {
-        a.srcObject = stream.stream as MediaStream
-        a.muted = false // chỉ bật khi đeo tai nghe để tránh echo
-        a.volume = 1
-        a.autoplay = true
-        try {
-          await a.play()
-        } catch {
-          /* ignore */
-        }
-      }
     }
   }, [audioPubId, isJoined, localAudio, myUserID, self])
 
@@ -272,6 +348,7 @@ export default function UserCard(props: UserCardProps) {
     if (!self || !zgRef.current || roomID == null || !isJoined) return
     stopScreen(zgRef.current, localScreen, screenPubId, screenRef.current)
     await stopCamera(zgRef.current, localCam, camPubId, camRef.current)
+    await stopAudio(zgRef.current, localAudio, audioPubId)
     setLocalScreen(null)
     setScreenPubId("")
     setLocalCam(null)
@@ -281,21 +358,35 @@ export default function UserCard(props: UserCardProps) {
     await logoutRoom(zgRef.current, roomID)
     setIsJoined(false)
     navigate("/")
-  }, [self, roomID, isJoined, localScreen, screenPubId, localCam, camPubId, navigate])
+  }, [
+    self,
+    roomID,
+    isJoined,
+    localScreen,
+    screenPubId,
+    localCam,
+    camPubId,
+    localAudio,
+    audioPubId,
+    navigate,
+  ])
 
-  // (vẫn giữ effect monitor như bạn có; nhưng đã play ngay trong click để chắc user gesture)
-  useEffect(() => {
-    if (!self || !localAudio || !localMonitorRef.current) return
-    const el = localMonitorRef.current
-    el.srcObject = localAudio.stream as MediaStream // gán trực tiếp
-    console.log("localAudio.stream ===", localAudio.stream)
-    el.autoplay = true
-    el.muted = false // chỉ bật nếu đeo tai nghe để tránh echo
-    el.volume = 1
-    console.log("el === 123 ", el)
-    el.play?.()
+  // Self mic on?
+  const isSelfMicOn = useMemo(() => {
+    return self && localAudio ? isStreamAudioOn(localAudio.stream as MediaStream) : false
   }, [self, localAudio])
 
+  // Remote mic on?
+  const isRemoteMicOn = useMemo(() => {
+    if (self) return false
+    if (!audioStreamId) return false
+    const item = remoteViews.get(audioStreamId)
+    return isStreamAudioOn(item?.stream ?? null)
+  }, [self, audioStreamId, remoteViews])
+
+  const isMicOn = isSelfMicOn || isRemoteMicOn
+
+  // ===== RENDER =====
   return (
     <Card.Root width="360px">
       <Card.Body>
@@ -321,27 +412,16 @@ export default function UserCard(props: UserCardProps) {
 
         {/* Camera tile */}
         {self ? (
-          localCam ? (
-            <Box
-              ref={camRef}
-              id={`${userID}_cam_local`}
-              w="340px"
-              h="240px"
-              border="1px solid #e53e3e"
-              mx="auto"
-              mb={3}
-              borderRadius="md"
-            />
-          ) : (
-            <HStack mb="3" gap="3" marginInline="auto">
-              {/* Nếu dùng Chakra Avatar chính tắc: <Avatar name={userName} /> */}
-              <Avatar.Root>
-                {userName}
-                <Avatar.Image src="https://images.unsplash.com/photo-1511806754518-53bada35f930" />
-                <Avatar.Fallback name={userName} />
-              </Avatar.Root>
-            </HStack>
-          )
+          <Box
+            ref={camRef}
+            id={`${userID}_cam_local`}
+            w="340px"
+            h="240px"
+            border="1px solid #e53e3e"
+            mx="auto"
+            mb={3}
+            borderRadius="md"
+          />
         ) : camStreamId ? (
           <Box
             ref={camRef}
@@ -362,7 +442,7 @@ export default function UserCard(props: UserCardProps) {
           </HStack>
         )}
 
-        {/* Screen tile: self luôn mounted để tránh race-condition; remote mount theo stream */}
+        {/* Screen tile */}
         <Box
           ref={screenRef}
           id={
@@ -378,10 +458,10 @@ export default function UserCard(props: UserCardProps) {
           mx="auto"
           mb={1}
           borderRadius="md"
-          display={self ? (localScreen ? "flex" : "none") : screenStreamId ? "flex" : "none"}
+          display={self ? "flex" : screenStreamId ? "flex" : "none"}
         />
 
-        {/* Audio “tile” nhỏ */}
+        {/* Audio box */}
         <Box
           ref={audioRef}
           id={
@@ -389,14 +469,14 @@ export default function UserCard(props: UserCardProps) {
           }
           w="20px"
           h="20px"
-          border="1px solid #3182ce"
           mx="auto"
           mb={1}
           borderRadius="md"
+          border="1px solid #3182ce"
+          bg={isMicOn ? "red.400" : "transparent"}
+          boxShadow={isMicOn ? "0 0 0 2px rgba(229,62,62,0.5)" : "none"}
+          transition="background-color 120ms ease, box-shadow 120ms ease"
         />
-
-        {/* Monitor local mic (tuỳ chọn) */}
-        <audio ref={localMonitorRef} style={{ width: 20, height: 20, background: "red" }} />
       </Card.Body>
     </Card.Root>
   )

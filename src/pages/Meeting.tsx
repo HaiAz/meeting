@@ -1,3 +1,4 @@
+// pages/MeetingPage.tsx
 import { Box, Heading, Stack, Text, Badge, Flex } from "@chakra-ui/react"
 import { useEffect, useRef, useState } from "react"
 import {
@@ -43,6 +44,7 @@ export default function MeetingPage() {
       setSlot,
       clearSlot,
       onStreamDelete: () => {},
+      selfUserID: userID, // ⬅️ tránh kéo stream của chính mình
     })
 
     return () => {
@@ -50,7 +52,7 @@ export default function MeetingPage() {
       cleanupUsers()
       zgRef.current = null
     }
-  }, [clearSlot, engine, removeUsers, setSlot, upsertUsers])
+  }, [clearSlot, engine, removeUsers, setSlot, upsertUsers, userID])
 
   return (
     <Box p={4} position="relative">

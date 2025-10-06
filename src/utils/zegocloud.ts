@@ -1,3 +1,4 @@
+// utils/zegocloud.ts
 import { ZegoExpressEngine } from "zego-express-engine-webrtc"
 import type { ZegoUser } from "zego-express-engine-webrtc/sdk/code/zh/ZegoExpressEntity.rtm"
 import type ZegoLocalStream from "zego-express-engine-webrtc/sdk/code/zh/ZegoLocalStream.web"
@@ -5,7 +6,8 @@ import type ZegoLocalStream from "zego-express-engine-webrtc/sdk/code/zh/ZegoLoc
 const APP_ID = Number(import.meta.env.VITE_ZEGO_APP_ID)
 const SERVER_WS = import.meta.env.VITE_ZEGO_SERVER_WS
 
-// ⬇️ ĐỔI: lưu cả view + stream để UI có thể fallback audio-only khi SDK không chèn <audio>
+// Lưu cả view + MediaStream để UI mount qua view.playVideo(container),
+// và vẫn có stream nếu cần đọc track/debug.
 export type RemoteMedia = {
   view: ReturnType<ZegoExpressEngine["createRemoteStreamView"]>
   stream: MediaStream
@@ -16,19 +18,21 @@ export type Participant = { userID: string; userName: string }
 export type StreamKind = "cam" | "screen" | "audio"
 
 export function createEngine() {
-  if (!APP_ID || Number.isNaN(APP_ID) || !SERVER_WS)
+  if (!APP_ID || Number.isNaN(APP_ID) || !SERVER_WS) {
     throw new Error("Missing ZEGO_APP_ID or ZEGO_SERVER_WS")
+  }
   const engine = new ZegoExpressEngine(APP_ID, SERVER_WS)
+  // Tắt log để UI gọn—mở lại khi cần debug
   engine.setLogConfig({ logLevel: "disable", remoteLogLevel: "disable", logURL: "" })
   engine.setDebugVerbose(false)
   return engine
 }
 
-/** `${userID}_cam_xxx` | `${userID}_screen_xxx` | `${userID}_audio_xxx` */
+/** Parse `${userID}_cam_xxx` | `${userID}_screen_xxx` | `${userID}_audio_xxx` */
 export function parseStreamId(
   id: string
 ): { userID: string; kind: StreamKind } | null {
-  // non-greedy cho userID có dấu gạch dưới
+  // non-greedy để userID có thể có dấu gạch dưới
   const m = id.match(/^(.+?)_(cam|screen|audio)_.+$/)
   if (!m) return null
   return { userID: m[1], kind: m[2] as StreamKind }
@@ -77,10 +81,12 @@ type WireStreamsOpts = {
   clearSlot?: (userID: string, kind: "cam" | "screen" | "audio") => void
   onStreamAdd?: (streamID: string) => void
   onStreamDelete?: (streamID: string) => void
+  /** userID của chính mình để bỏ qua stream self (tránh loopback) */
+  selfUserID?: string
 }
 
 export function wireStreams(engine: ZegoExpressEngine, opts: WireStreamsOpts) {
-  const { remoteViewMap, setSlot, clearSlot, onStreamAdd, onStreamDelete } = opts
+  const { remoteViewMap, setSlot, clearSlot, onStreamAdd, onStreamDelete, selfUserID } = opts
   const addedIds = new Set<string>()
   const playingIds = new Set<string>() // chặn race “kéo trùng”
 
@@ -89,24 +95,26 @@ export function wireStreams(engine: ZegoExpressEngine, opts: WireStreamsOpts) {
     updateType: "ADD" | "DELETE",
     streamList: Array<{ streamID: string }>
   ) => {
-    console.log('updateType ===', updateType)
     if (updateType === "ADD") {
       for (const s of streamList) {
         const id = s.streamID
         if (remoteViewMap.has(id) || playingIds.has(id) || addedIds.has(id)) continue
-        playingIds.add(id)
 
         const meta = parseStreamId(id)
+
+        // KHÔNG kéo stream của chính mình
+        if (meta?.userID && selfUserID && meta.userID === selfUserID) continue
+
+        playingIds.add(id)
         try {
           const remoteStream = await engine.startPlayingStream(id)
-          const view = engine.createRemoteStreamView(remoteStream)
 
-          // lưu cả stream để dùng fallback audio-only ở UI
+          // Unmute ở tầng ZEGO để chắc chắn tiếng được phát
+          engine.mutePlayStreamAudio(id, false)
+
+          const view = engine.createRemoteStreamView(remoteStream)
           remoteViewMap.set(id, { view, stream: remoteStream as unknown as MediaStream })
           addedIds.add(id)
-
-          // đảm bảo player phía SDK không bị mute
-          engine.mutePlayStreamAudio(id, false)
 
           if (meta) setSlot?.(meta.userID, meta.kind, id)
           onStreamAdd?.(id)
@@ -130,16 +138,14 @@ export function wireStreams(engine: ZegoExpressEngine, opts: WireStreamsOpts) {
         onStreamDelete?.(id)
       }
     }
-    console.count(`[roomStreamUpdate][${updateType}]`)
   }
 
   engine.on("roomStreamUpdate", onRoomStreamUpdate)
 
-  engine.on('playQualityUpdate', (streamID, s) => {
-    console.log('[playQuality]', streamID)
-    console.log('seting === audio quality ====', s)
+  // Các log hữu ích khi debug playback
+  engine.on("playQualityUpdate", (streamID, s) => {
+    console.log("[playQuality]", streamID, s)
   })
-
   engine.on("publisherStateUpdate", (res) => {
     console.log("[publisherStateUpdate]", res)
   })
@@ -201,7 +207,7 @@ export async function stopCamera(
   }
 }
 
-/** ==== Audio-only ==== */
+/** ==== Audio-only (micro) ==== */
 export async function startAudio(
   engine: ZegoExpressEngine,
   params: { userID: string }
@@ -211,13 +217,15 @@ export async function startAudio(
   })
   const streamId = `${params.userID}_audio_${randomCode()}`
   engine.startPublishingStream(streamId, audio)
+  // Đảm bảo không mute ở tầng publish
+  engine.muteMicrophone?.(false)
   return { stream: audio, streamId }
 }
 
 export async function stopAudio(
   engine: ZegoExpressEngine,
   stream: ZegoLocalStream | null,
-  streamId: string | null,
+  streamId: string | null
 ) {
   try {
     if (streamId) engine.stopPublishingStream(streamId)
