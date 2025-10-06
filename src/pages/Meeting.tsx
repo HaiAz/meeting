@@ -1,4 +1,3 @@
-// pages/MeetingPage.tsx
 import { Box, Heading, Stack, Text, Badge, Flex } from "@chakra-ui/react"
 import { useEffect, useRef, useState } from "react"
 import {
@@ -28,7 +27,7 @@ export default function MeetingPage() {
   const upsertUsers = useRoomStore((s) => s.upsertUsers)
   const removeUsers = useRoomStore((s) => s.removeUsers)
 
-  // Remote views map (KHÔNG để trong store để tránh mutate phải frozen object)
+  // Remote views map
   const remoteViewsRef = useRef<RemoteViewMap>(new Map())
 
   useEffect(() => {
@@ -44,7 +43,7 @@ export default function MeetingPage() {
       setSlot,
       clearSlot,
       onStreamDelete: () => {},
-      selfUserID: userID, // ⬅️ tránh kéo stream của chính mình
+      selfUserID: userID, // tránh kéo stream của chính mình
     })
 
     return () => {

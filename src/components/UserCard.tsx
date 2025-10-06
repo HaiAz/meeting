@@ -18,6 +18,11 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import type ZegoLocalStream from "zego-express-engine-webrtc/sdk/code/zh/ZegoLocalStream.web"
 
+type SinkCapableAudio = HTMLAudioElement & {
+  setSinkId?: (sinkId: string) => Promise<void>
+  readonly sinkId?: string
+}
+
 function isStreamAudioOn(stream?: MediaStream | null): boolean {
   if (!stream) return false
   const tracks = stream.getAudioTracks()
@@ -26,36 +31,38 @@ function isStreamAudioOn(stream?: MediaStream | null): boolean {
   return t.enabled && t.readyState === "live"
 }
 
+function clampVolume(v: number | undefined): number {
+  if (v == null || Number.isNaN(v)) return 1
+  return Math.max(0, Math.min(1, v))
+}
+
 function mountMediaToBox(
   box: HTMLElement,
   media: MediaStream,
   opts?: { muted?: boolean; volume?: number; sinkId?: string }
-) {
-  // clear cũ
+): HTMLAudioElement {
   box.innerHTML = ""
 
-  const a = document.createElement("audio")
+  const a: SinkCapableAudio = document.createElement("audio") as SinkCapableAudio
   a.autoplay = true
   a.controls = false
-  // a.playsInline = true as any
   a.srcObject = media
-  a.muted = !!opts?.muted
-  a.volume = opts?.muted ? 0 : opts?.volume ?? 1
+  const muted = !!opts?.muted
+  a.muted = muted
+  a.volume = muted ? 0 : clampVolume(opts?.volume)
   box.appendChild(a)
 
-  // chọn thiết bị output nếu có
-  if (!opts?.muted && typeof a.setSinkId === "function") {
-    try {
-      a.setSinkId(opts?.sinkId || "default")
-    } catch (err) {
-      console.log("err ===", err)
-      throw new Error()
-    }
+  if (!muted && typeof a.setSinkId === "function") {
+    a.setSinkId(opts?.sinkId || "default").catch(() => {})
   }
 
-  const tryPlay = () => a.play().catch(() => {})
+  const tryPlay = () => {
+    void a.play().catch(() => {})
+  }
   tryPlay()
   document.addEventListener("click", tryPlay, { once: true })
+
+  return a
 }
 
 function unmountBox(box?: HTMLElement | null) {
@@ -63,20 +70,21 @@ function unmountBox(box?: HTMLElement | null) {
   box.innerHTML = ""
 }
 
-// Helper: mute/unmute toàn bộ media con trong 1 container
+// Mute/unmute mọi media con (cho local cam/screen)
 function muteAllMediaIn(el: HTMLElement, mute: boolean) {
   el.querySelectorAll<HTMLMediaElement>("video, audio").forEach((m) => {
     m.muted = mute
     m.volume = mute ? 0 : 1
     if (m.tagName === "VIDEO") {
-      ;(m as HTMLVideoElement).playsInline = true
-      m.setAttribute("playsinline", "")
-      m.setAttribute("webkit-playsinline", "")
+      const v = m as HTMLVideoElement
+      v.playsInline = true
+      v.setAttribute("playsinline", "")
+      v.setAttribute("webkit-playsinline", "")
     }
   })
 }
 
-// Helper: bảo đảm phần tử do SDK chèn sẽ thực sự play sau user-gesture
+// Đảm bảo element do SDK chèn (cam/screen) sẽ play sau gesture
 function ensureMediaPlayable(container: HTMLElement, muted = false) {
   const media = container.querySelector("video, audio") as HTMLMediaElement | null
   if (!media) return
@@ -84,13 +92,15 @@ function ensureMediaPlayable(container: HTMLElement, muted = false) {
   media.volume = muted ? 0 : 1
   media.autoplay = true
   if (media.tagName === "VIDEO") {
-    ;(media as HTMLVideoElement).playsInline = true
-    media.setAttribute("playsinline", "")
-    media.setAttribute("webkit-playsinline", "")
+    const v = media as HTMLVideoElement
+    v.playsInline = true
+    v.setAttribute("playsinline", "")
+    v.setAttribute("webkit-playsinline", "")
   }
-  const tryPlay = () => media.play?.().catch(() => {})
+  const tryPlay = () => {
+    void media.play?.().catch(() => {})
+  }
   tryPlay()
-  // Né autoplay: gọi lại sau click đầu tiên
   document.addEventListener("click", tryPlay, { once: true })
 }
 
@@ -158,7 +168,6 @@ export default function UserCard(props: UserCardProps) {
     box.innerHTML = ""
     if (!localCam) return
     localCam.playVideo(box)
-    // Local cam thì mute DOM để không tự nghe track audio trong stream cam
     muteAllMediaIn(box, true)
     return () => {
       box.innerHTML = ""
@@ -173,7 +182,6 @@ export default function UserCard(props: UserCardProps) {
     box.innerHTML = ""
     if (!localScreen) return
     localScreen.playVideo(box)
-    // screen có thể có audio (nếu withAudio: true); mute DOM cũng ok
     muteAllMediaIn(box, true)
     return () => {
       box.innerHTML = ""
@@ -185,13 +193,10 @@ export default function UserCard(props: UserCardProps) {
     if (!self) return
     const box = audioRef.current
     if (!box) return
-
     if (!localAudio) {
       unmountBox(box)
       return
     }
-
-    // local: muted
     mountMediaToBox(box, localAudio.stream as MediaStream, { muted: true, volume: 0 })
     return () => {
       unmountBox(box)
@@ -209,12 +214,8 @@ export default function UserCard(props: UserCardProps) {
     if (!camStreamId) return
     const item = remoteViews.get(camStreamId)
     if (!item) return
-
-    // ZEGO render
     item.view.playVideo(box)
-    // Ensure phát được (unmute DOM + play sau gesture)
-    ensureMediaPlayable(box, /*muted*/ false)
-
+    ensureMediaPlayable(box, false)
     return () => {
       box.innerHTML = ""
     }
@@ -229,7 +230,6 @@ export default function UserCard(props: UserCardProps) {
     if (!screenStreamId) return
     const item = remoteViews.get(screenStreamId)
     if (!item) return
-
     item.view.playVideo(box)
     ensureMediaPlayable(box, false)
     return () => {
@@ -242,28 +242,16 @@ export default function UserCard(props: UserCardProps) {
     if (self) return
     const box = audioRef.current
     if (!box) return
-
     if (!audioStreamId) {
       unmountBox(box)
       return
     }
-
     const item = remoteViews.get(audioStreamId)
     if (!item?.stream) {
       unmountBox(box)
       return
     }
-
-    // remote: unmuted (volume = 1)
     mountMediaToBox(box, item.stream, { muted: false, volume: 1, sinkId: "default" })
-
-    // debug
-    const tracks = item.stream.getAudioTracks()
-    console.log(
-      "remote audio tracks:",
-      tracks.map((t) => ({ enabled: t.enabled, readyState: t.readyState, label: t.label }))
-    )
-
     return () => {
       unmountBox(box)
     }
@@ -309,12 +297,10 @@ export default function UserCard(props: UserCardProps) {
 
   const handleAudio = useCallback(async () => {
     if (!self || !zgRef.current || !isJoined) return
-
     if (localAudio) {
       await stopAudio(zgRef.current, localAudio, audioPubId)
       setLocalAudio(null)
       setAudioPubId("")
-      // Box sẽ clear bởi effect localAudio (unmountBox)
     } else {
       const { stream, streamId } = await startAudio(zgRef.current, { userID: myUserID })
       setLocalAudio(stream)
@@ -387,6 +373,10 @@ export default function UserCard(props: UserCardProps) {
   const isMicOn = isSelfMicOn || isRemoteMicOn
 
   // ===== RENDER =====
+  const showCam = self ? !!localCam : !!camStreamId
+  const showScreen = self ? !!localScreen : !!screenStreamId
+  const showAudio = self ? !!localAudio : !!audioStreamId
+
   return (
     <Card.Root width="360px">
       <Card.Body>
@@ -410,11 +400,11 @@ export default function UserCard(props: UserCardProps) {
           </Stack>
         )}
 
-        {/* Camera tile */}
-        {self ? (
+        {/* Camera tile — chỉ render khi có stream */}
+        {showCam ? (
           <Box
             ref={camRef}
-            id={`${userID}_cam_local`}
+            id={self ? `${userID}_cam_local` : `remote-${camStreamId!}`}
             w="340px"
             h="240px"
             border="1px solid #e53e3e"
@@ -422,18 +412,41 @@ export default function UserCard(props: UserCardProps) {
             mb={3}
             borderRadius="md"
           />
-        ) : camStreamId ? (
+        ) : null}
+
+        {/* Screen tile — chỉ render khi có stream */}
+        {showScreen ? (
           <Box
-            ref={camRef}
-            id={`remote-${camStreamId}`}
+            ref={screenRef}
+            id={self ? `${userID}_screen_local` : `remote-${screenStreamId!}`}
             w="340px"
-            h="240px"
-            border="1px solid #e53e3e"
+            h="220px"
+            border="1px solid #3182ce"
             mx="auto"
-            mb={3}
+            mb={1}
             borderRadius="md"
           />
-        ) : (
+        ) : null}
+
+        {/* Audio box — chỉ render khi có stream audio */}
+        {showAudio ? (
+          <Box
+            ref={audioRef}
+            id={self ? `${userID}_audio_local` : `remote-${audioStreamId!}`}
+            w="20px"
+            h="20px"
+            mx="auto"
+            mb={1}
+            borderRadius="md"
+            border="1px solid #3182ce"
+            bg={isMicOn ? "red.400" : "transparent"}
+            boxShadow={isMicOn ? "0 0 0 2px rgba(229,62,62,0.5)" : "none"}
+            transition="background-color 120ms ease, box-shadow 120ms ease"
+          />
+        ) : null}
+
+        {/* Placeholder avatar khi không có cam (chỉ cho remote hoặc self chưa bật cam) */}
+        {!showCam && (
           <HStack mb="3" gap="3" marginInline="auto">
             <Avatar.Root>
               {userName}
@@ -441,42 +454,6 @@ export default function UserCard(props: UserCardProps) {
             </Avatar.Root>
           </HStack>
         )}
-
-        {/* Screen tile */}
-        <Box
-          ref={screenRef}
-          id={
-            self
-              ? `${userID}_screen_local`
-              : screenStreamId
-              ? `remote-${screenStreamId}`
-              : undefined
-          }
-          w="340px"
-          h="220px"
-          border="1px solid #3182ce"
-          mx="auto"
-          mb={1}
-          borderRadius="md"
-          display={self ? "flex" : screenStreamId ? "flex" : "none"}
-        />
-
-        {/* Audio box */}
-        <Box
-          ref={audioRef}
-          id={
-            self ? `${userID}_audio_local` : audioStreamId ? `remote-${audioStreamId}` : undefined
-          }
-          w="20px"
-          h="20px"
-          mx="auto"
-          mb={1}
-          borderRadius="md"
-          border="1px solid #3182ce"
-          bg={isMicOn ? "red.400" : "transparent"}
-          boxShadow={isMicOn ? "0 0 0 2px rgba(229,62,62,0.5)" : "none"}
-          transition="background-color 120ms ease, box-shadow 120ms ease"
-        />
       </Card.Body>
     </Card.Root>
   )
