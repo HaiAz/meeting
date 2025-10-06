@@ -258,7 +258,7 @@ export default function UserCard(props: UserCardProps) {
     const el = localMonitorRef.current
     el.srcObject = localAudio.stream as MediaStream // gán trực tiếp
     el.autoplay = true
-    el.muted = false // chỉ bật nếu bạn đeo tai nghe để tránh echo
+    el.muted = false // chỉ bật nếu đeo tai nghe để tránh echo
     el.volume = 1
     el.play?.().catch(() => {}) // “kick” play sau user gesture
   }, [self, localAudio])
