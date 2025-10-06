@@ -1,6 +1,7 @@
 import useZegoEngine from "@/hooks/useZego"
 import {
   type RemoteViewMap,
+  // type RemoteMedia, // (không cần import type này nếu bạn không dùng trực tiếp)
   createEngine,
   loginRoom,
   stopCamera,
@@ -26,11 +27,25 @@ export type UserCardProps = {
 
 const TOKENS: Record<"admin" | "abc" | "xyz", string> = {
   admin:
-    "04AAAAAGjggVUADMvXqd+Oy/p8sPpLOwCvGYA/4jJVsS/fbnqPnk4R6soqRqNAJq7OdfXnYoVJopOJ8su3VXIN6scnTdsgA0HVgqwCnySsbXBq1RKewyigvSzpCWKPO2eAkc4Vnt8ngZC0BBG7fKS1VWGpeahp3i873hD7La5AJVGwe6mSdWWq62B9yKutd7cxEGeSJxDRFuNM6O2DE///PI6ZTdPfPRQ8XL0aZRDFNaYefRcfldHz/QtdyYXv1yJAj5wmoItVUQE=",
-  abc: "04AAAAAGjggWcADOH/NFKO4fAmo2RvmwCvu1H7LT5cSqr2rfbFARRRBHMSZ8i9YKT38Gd4ezJfM6iCgVAtunxl40WwiTm78w+pHlDpk0TU8FF9HTTS321hpN6WDh8bsaFShgDk68wM/xdegNQVCB4rjKJ37or7hNqMLsvnaGa2iY/LHpKnLikmgPPgBv/jgyOhGaJ6y9KIcpwvM5jiRwtgd/s/C/R5Wq5wPtDJip0l/qUwx9cCrJAUnTFQg7vUirrr7sj46z6ZDAE=",
-  xyz: "04AAAAAGjggXAADD4QXAy2rfbAnbdvXwCvLVq3P8vhy7bC7D/vS2mZ8RvPl8a5/7d0OXhcJfztcv+TSNHBToLWOX1uuiTy9G+Ae/wZUOo4w9EigkEOvGilYNx5zVk8hMLXVNcPciiYg2ff3zGRjaM23VXdmHQjzpmEDos0ik3mVxsD7/zR5odcLAnMV6b5WJF7U9HcENqqQiMm4rzr+IDRWv5jCjUBLCUUsSrHCATFVL/CGukjg+wX3DZetIRPRRFBhfhrKawyQwE=",
+    "04AAAAAGjkiaMADCzbOn/oaHcquOofggCt0AcFpSKjvzRgViN/PZMVFGjAtoZxb/IJgjtXgi9ur2OiBL+Onhrb3PAxRCARJXplyFqRaPkmnfnTwWSx0jcyBlVsfzWpj+7j511czJi3SqKu4ab/0Y44W9czfcREzaiLyu8zqFL1cJeDgQSykfHxlsAj34kzvfS+Nm7GUrRbuRFSPl3kUkm9ZamhqYXmRyvxzGQZxOUgSj4FeSXqYypYAou3D+/Sot8X9JH5NXAB",
+  abc: "04AAAAAGjkia4ADKQboEAikWIF9hXABQCvbTRhjTcy9D/0p7ctXul5s35iRSQIItAejoOWImcVa2pi9z9InBOcCxQ9CZTkr0fxKeqlLSkM3/lay+652nX2QRHO9+l+k2BMaYGtphftjU0pSzts5BD5h6tKk7SIPYRZltFX599t8TQTTSVy+NOqIH1jb6CGhT6EwUwKFWJqIadVCjKW1/UFubwW8tE8mH+k99EEhpxNFugOVO6ox8IjTynI9gdXXhKb+vhtY6GLawE=",
+  xyz: "04AAAAAGjkibkADNHLeXmzSzj5BUORJwCu5ESeioZmFEHMeDDe6PiU1PSqRnA4GOOLM80n6Di89zFbmf4v738gjsTQeZYo6GeK1DAyN617q83f2wcMnLfbZo8xMf5TjUFk+AUc8Ow1XpKOiFIvwn/Tis/Jhe6BApT7G7xUJT5pquzHZLNqiRfzpPJXYj02LbMbdVvm2lmorbPqwNigR93cv3W4ZA2DYdtLLMHPzUAycDSQ01ewneHg7b83CaNZql4kERaoalP9AQ==",
 }
 const IDS: Record<"admin" | "abc" | "xyz", string> = { admin: "27098", abc: "12345", xyz: "54321" }
+
+function ensureMediaPlayable(container: HTMLElement) {
+  const media = container.querySelector("video, audio") as HTMLMediaElement | null
+  if (!media) return
+  media.muted = false
+  media.volume = 1
+  media.autoplay = true
+  if (media.tagName === "VIDEO") {
+    ;(media as HTMLVideoElement).playsInline = true
+    media.setAttribute("playsinline", "")
+    media.setAttribute("webkit-playsinline", "")
+  }
+  media.play?.().catch(() => {})
+}
 
 export default function UserCard(props: UserCardProps) {
   const { userID, userName, self = false, remoteViews } = props
@@ -74,25 +89,7 @@ export default function UserCard(props: UserCardProps) {
   // local cam preview
   useEffect(() => {
     if (localCam && camRef.current) localCam.playVideo(camRef.current)
-  }, [camStreamId, engine, localCam])
-
-  // useEffect(() => {
-  //   if (camStreamId) {
-  //     engine.startPlayingStream(camStreamId).then((remoteStream) => {
-  //       const audioTracks = remoteStream.getAudioTracks?.() || []
-  //       console.log("audioTracks=", audioTracks)
-  //     })
-  //   }
-  // }, [camStreamId, engine])
-
-  useEffect(() => {
-    if (audioStreamId) {
-      engine.startPlayingStream(audioStreamId).then((remoteStream) => {
-        const audioTracks = remoteStream.getAudioTracks?.() || []
-        console.log("audioTracks=", audioTracks)
-      })
-    }
-  }, [audioStreamId, engine])
+  }, [localCam])
 
   // local audio preview
   useEffect(() => {
@@ -118,8 +115,9 @@ export default function UserCard(props: UserCardProps) {
       el.innerHTML = ""
       return
     }
-    const view = remoteViews.get(camStreamId)
-    view?.playVideo(el)
+    const item = remoteViews.get(camStreamId)
+    item?.view.playVideo(el)
+    ensureMediaPlayable(el)
 
     return () => {
       if (el) el.innerHTML = ""
@@ -135,8 +133,23 @@ export default function UserCard(props: UserCardProps) {
       el.innerHTML = ""
       return
     }
-    const view = remoteViews.get(audioStreamId)
-    view?.playVideo(el)
+    const item = remoteViews.get(audioStreamId)
+    item?.view.playVideo(el)
+    ensureMediaPlayable(el)
+
+    // Fallback: nếu SDK không chèn element cho audio-only, tự gắn <audio>
+    setTimeout(() => {
+      const media = el.querySelector("video, audio") as HTMLMediaElement | null
+      if (!media && item?.stream) {
+        const a = document.createElement("audio")
+        a.autoplay = true
+        a.muted = false
+        a.volume = 1
+        a.srcObject = item.stream
+        el.appendChild(a)
+        a.play?.().catch(() => {})
+      }
+    }, 0)
 
     return () => {
       if (el) el.innerHTML = ""
@@ -152,8 +165,9 @@ export default function UserCard(props: UserCardProps) {
       el.innerHTML = ""
       return
     }
-    const view = remoteViews.get(screenStreamId)
-    view?.playVideo(el)
+    const item = remoteViews.get(screenStreamId)
+    item?.view.playVideo(el)
+    ensureMediaPlayable(el)
 
     return () => {
       if (el) el.innerHTML = ""
@@ -198,6 +212,8 @@ export default function UserCard(props: UserCardProps) {
     }
   }, [self, isJoined, localCam, camPubId, myUserID])
 
+  const localMonitorRef = useRef<HTMLAudioElement>(null)
+
   const handleAudio = useCallback(async () => {
     if (!self || !zgRef.current || !isJoined) return
     if (localAudio) {
@@ -210,7 +226,23 @@ export default function UserCard(props: UserCardProps) {
       })
       setLocalAudio(stream)
       setAudioPubId(streamId)
+
+      // Preview local qua SDK (có thể không render element cho audio-only)
       if (audioRef.current) stream.playVideo(audioRef.current)
+
+      // 🔑 Monitor local mic: gán srcObject + play NGAY trong click (user gesture)
+      const a = localMonitorRef.current
+      if (a) {
+        a.srcObject = stream.stream as MediaStream
+        a.muted = false // chỉ bật khi đeo tai nghe để tránh echo
+        a.volume = 1
+        a.autoplay = true
+        try {
+          await a.play()
+        } catch {
+          /* ignore */
+        }
+      }
     }
   }, [audioPubId, isJoined, localAudio, myUserID, self])
 
@@ -251,16 +283,17 @@ export default function UserCard(props: UserCardProps) {
     navigate("/")
   }, [self, roomID, isJoined, localScreen, screenPubId, localCam, camPubId, navigate])
 
-  const localMonitorRef = useRef<HTMLAudioElement>(null)
-
+  // (vẫn giữ effect monitor như bạn có; nhưng đã play ngay trong click để chắc user gesture)
   useEffect(() => {
     if (!self || !localAudio || !localMonitorRef.current) return
     const el = localMonitorRef.current
     el.srcObject = localAudio.stream as MediaStream // gán trực tiếp
+    console.log("localAudio.stream ===", localAudio.stream)
     el.autoplay = true
     el.muted = false // chỉ bật nếu đeo tai nghe để tránh echo
     el.volume = 1
-    el.play?.().catch(() => {}) // “kick” play sau user gesture
+    console.log("el === 123 ", el)
+    el.play?.()
   }, [self, localAudio])
 
   return (
@@ -348,6 +381,7 @@ export default function UserCard(props: UserCardProps) {
           display={self ? (localScreen ? "flex" : "none") : screenStreamId ? "flex" : "none"}
         />
 
+        {/* Audio “tile” nhỏ */}
         <Box
           ref={audioRef}
           id={
@@ -360,7 +394,9 @@ export default function UserCard(props: UserCardProps) {
           mb={1}
           borderRadius="md"
         />
-        {/* <audio ref={localMonitorRef} style={{ width: 20, height: 20, background: "red" }} /> */}
+
+        {/* Monitor local mic (tuỳ chọn) */}
+        <audio ref={localMonitorRef} style={{ width: 20, height: 20, background: "red" }} />
       </Card.Body>
     </Card.Root>
   )

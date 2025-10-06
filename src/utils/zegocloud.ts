@@ -5,7 +5,13 @@ import type ZegoLocalStream from "zego-express-engine-webrtc/sdk/code/zh/ZegoLoc
 const APP_ID = Number(import.meta.env.VITE_ZEGO_APP_ID)
 const SERVER_WS = import.meta.env.VITE_ZEGO_SERVER_WS
 
-export type RemoteViewMap = Map<string, ReturnType<ZegoExpressEngine["createRemoteStreamView"]>>
+// ⬇️ ĐỔI: lưu cả view + stream để UI có thể fallback audio-only khi SDK không chèn <audio>
+export type RemoteMedia = {
+  view: ReturnType<ZegoExpressEngine["createRemoteStreamView"]>
+  stream: MediaStream
+}
+export type RemoteViewMap = Map<string, RemoteMedia>
+
 export type Participant = { userID: string; userName: string }
 export type StreamKind = "cam" | "screen" | "audio"
 
@@ -76,27 +82,39 @@ type WireStreamsOpts = {
 export function wireStreams(engine: ZegoExpressEngine, opts: WireStreamsOpts) {
   const { remoteViewMap, setSlot, clearSlot, onStreamAdd, onStreamDelete } = opts
   const addedIds = new Set<string>()
+  const playingIds = new Set<string>() // chặn race “kéo trùng”
 
   const onRoomStreamUpdate = async (
     _roomID: string,
     updateType: "ADD" | "DELETE",
     streamList: Array<{ streamID: string }>
   ) => {
-    console.log('updateType ===', updateType);
+    console.log('updateType ===', updateType)
     if (updateType === "ADD") {
       for (const s of streamList) {
         const id = s.streamID
-        if (remoteViewMap.has(id)) continue
+        if (remoteViewMap.has(id) || playingIds.has(id) || addedIds.has(id)) continue
+        playingIds.add(id)
+
         const meta = parseStreamId(id)
-        engine.mutePlayStreamAudio(id, false)
+        try {
+          const remoteStream = await engine.startPlayingStream(id)
+          const view = engine.createRemoteStreamView(remoteStream)
 
-        const remoteStream = await engine.startPlayingStream(id)
-        const view = engine.createRemoteStreamView(remoteStream)
-        remoteViewMap.set(id, view)
-        addedIds.add(id)
+          // lưu cả stream để dùng fallback audio-only ở UI
+          remoteViewMap.set(id, { view, stream: remoteStream as unknown as MediaStream })
+          addedIds.add(id)
 
-        if (meta) setSlot?.(meta.userID, meta.kind, id)
-        onStreamAdd?.(id)
+          // đảm bảo player phía SDK không bị mute
+          engine.mutePlayStreamAudio(id, false)
+
+          if (meta) setSlot?.(meta.userID, meta.kind, id)
+          onStreamAdd?.(id)
+        } catch (e) {
+          console.warn("[wireStreams] startPlayingStream failed:", id, e)
+        } finally {
+          playingIds.delete(id)
+        }
       }
     } else {
       for (const s of streamList) {
@@ -106,29 +124,31 @@ export function wireStreams(engine: ZegoExpressEngine, opts: WireStreamsOpts) {
         engine.stopPlayingStream(id)
         remoteViewMap.delete(id)
         addedIds.delete(id)
+        playingIds.delete(id)
 
         if (meta) clearSlot?.(meta.userID, meta.kind)
         onStreamDelete?.(id)
       }
     }
+    console.count(`[roomStreamUpdate][${updateType}]`)
   }
 
   engine.on("roomStreamUpdate", onRoomStreamUpdate)
 
   engine.on('playQualityUpdate', (streamID, s) => {
     console.log('[playQuality]', streamID)
-    console.log('seting === audio quality ====', s);
+    console.log('seting === audio quality ====', s)
   })
 
   engine.on("publisherStateUpdate", (res) => {
-    console.log("[publisherStateUpdate]", res);
-  });
+    console.log("[publisherStateUpdate]", res)
+  })
   engine.on("playerStateUpdate", (res) => {
-    console.log("[playerStateUpdate]", res);
-  });
+    console.log("[playerStateUpdate]", res)
+  })
   engine.on("roomStateChanged", (rid, reason, code) => {
-    console.log("[roomStateChanged]", rid, reason, code);
-  });
+    console.log("[roomStateChanged]", rid, reason, code)
+  })
 
   return () => {
     for (const id of Array.from(addedIds)) {
@@ -154,7 +174,7 @@ export async function logoutRoom(engine: ZegoExpressEngine, roomID: string) {
   return engine.logoutRoom(roomID)
 }
 
-/** ==== Camera (video-only, audio=false) ==== */
+/** ==== Camera (video+audio) ==== */
 export async function startCamera(
   engine: ZegoExpressEngine,
   params: { userID: string; quality?: 1 | 2 | 3 | 4 }
