@@ -6,7 +6,7 @@ import {
   wireParticipants,
   wireStreams,
   type RemoteViewMap,
-} from "@/utils/zegocloud"
+} from "@/libs/zegocloud"
 import { useSearchParams } from "react-router-dom"
 import UserCard from "@/components/UserCard"
 import useZegoEngine from "@/hooks/useZego"

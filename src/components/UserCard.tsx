@@ -11,7 +11,7 @@ import {
   logoutRoom,
   stopAudio,
   startAudio,
-} from "@/utils/zegocloud"
+} from "@/libs/zegocloud"
 import { useRoomStore } from "@/store/roomStore"
 import { Avatar, Box, Button, Card, HStack, Stack } from "@chakra-ui/react"
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
@@ -204,7 +204,6 @@ export default function UserCard(props: UserCardProps) {
   }, [self, localAudio])
 
   // ===== REMOTE PLAY =====
-
   // Remote cam
   useEffect(() => {
     if (self) return

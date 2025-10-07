@@ -1,4 +1,4 @@
-import { randomCode } from "@/utils/zegocloud"
+import { randomCode } from "@/utils/number"
 import { Box, Flex, Heading, Span, Button, Input } from "@chakra-ui/react"
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"

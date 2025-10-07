@@ -1,6 +1,6 @@
 import { useEffect, useState, type PropsWithChildren } from "react"
 import ZegoContext from "@/context/ZegoContext"
-import { createEngine, destroyEngine } from "@/utils/zegocloud"
+import { createEngine, destroyEngine } from "@/libs/zegocloud"
 import type { ZegoExpressEngine } from "zego-express-engine-webrtc"
 
 export default function ZegoEngineProvider({ children }: PropsWithChildren) {
