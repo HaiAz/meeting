@@ -2,7 +2,6 @@
 import useZegoEngine from "@/hooks/useZego"
 import {
   type RemoteViewMap,
-  createEngine,
   loginRoom,
   stopCamera,
   startCamera,
@@ -119,7 +118,7 @@ const TOKENS: Record<"admin" | "abc" | "xyz", string> = {
 }
 const IDS: Record<"admin" | "abc" | "xyz", string> = { admin: "27098", abc: "12345", xyz: "54321" }
 
-export default function UserCard(props: UserCardProps) {
+export default function UserSlot(props: UserCardProps) {
   const { userID, userName, self = false, remoteViews } = props
   const { roomID } = useParams()
   const navigate = useNavigate()
@@ -143,10 +142,8 @@ export default function UserCard(props: UserCardProps) {
   const camRef = useRef<HTMLDivElement>(null)
   const audioRef = useRef<HTMLDivElement>(null)
   const screenRef = useRef<HTMLDivElement>(null)
-  const zgRef = useRef<ReturnType<typeof createEngine> | null>(null)
 
   useEffect(() => {
-    zgRef.current = engine
     const onRoomStateChanged = (_room: string, state: string) => {
       if (state === "CONNECTED") setIsJoined(true)
       else if (state === "DISCONNECTED") setIsJoined(false)
@@ -154,7 +151,6 @@ export default function UserCard(props: UserCardProps) {
     engine.on("roomStateChanged", onRoomStateChanged)
     return () => {
       engine.off?.("roomStateChanged", onRoomStateChanged)
-      zgRef.current = null
     }
   }, [engine])
 
@@ -264,10 +260,10 @@ export default function UserCard(props: UserCardProps) {
   const myUserID = useMemo(() => IDS[tokenKey], [tokenKey])
 
   const onJoin = useCallback(async () => {
-    if (!self || !zgRef.current || roomID == null || isJoining || isJoined) return
+    if (!self || !engine || roomID == null || isJoining || isJoined) return
     setIsJoining(true)
     try {
-      const ok = await loginRoom(zgRef.current, roomID, TOKENS[tokenKey], {
+      const ok = await loginRoom(engine, roomID, TOKENS[tokenKey], {
         userID: myUserID,
         userName,
       })
@@ -275,16 +271,16 @@ export default function UserCard(props: UserCardProps) {
     } finally {
       setIsJoining(false)
     }
-  }, [self, roomID, tokenKey, myUserID, userName, isJoining, isJoined])
+  }, [self, engine, roomID, isJoining, isJoined, tokenKey, myUserID, userName])
 
   const handleCamera = useCallback(async () => {
-    if (!self || !zgRef.current || !isJoined) return
+    if (!self || !engine || !isJoined) return
     if (localCam) {
-      await stopCamera(zgRef.current, localCam, camPubId, camRef.current)
+      await stopCamera(engine, localCam, camPubId, camRef.current)
       setLocalCam(null)
       setCamPubId("")
     } else {
-      const { stream, streamId } = await startCamera(zgRef.current, {
+      const { stream, streamId } = await startCamera(engine, {
         userID: myUserID,
         quality: 3,
       })
@@ -292,59 +288,60 @@ export default function UserCard(props: UserCardProps) {
       setCamPubId(streamId)
       if (camRef.current) stream.playVideo(camRef.current)
     }
-  }, [self, isJoined, localCam, camPubId, myUserID])
+  }, [self, engine, isJoined, localCam, camPubId, myUserID])
 
   const handleAudio = useCallback(async () => {
-    if (!self || !zgRef.current || !isJoined) return
+    if (!self || !engine || !isJoined) return
     if (localAudio) {
-      await stopAudio(zgRef.current, localAudio, audioPubId)
+      await stopAudio(engine, localAudio, audioPubId)
       setLocalAudio(null)
       setAudioPubId("")
     } else {
-      const { stream, streamId } = await startAudio(zgRef.current, { userID: myUserID })
+      const { stream, streamId } = await startAudio(engine, { userID: myUserID })
       setLocalAudio(stream)
       setAudioPubId(streamId)
     }
-  }, [audioPubId, isJoined, localAudio, myUserID, self])
+  }, [audioPubId, engine, isJoined, localAudio, myUserID, self])
 
   const handleShareScreen = useCallback(async () => {
-    if (!self || !zgRef.current || !isJoined) return
+    if (!self || !engine || !isJoined) return
     if (localScreen) {
-      stopScreen(zgRef.current, localScreen, screenPubId, screenRef.current)
+      stopScreen(engine, localScreen, screenPubId, screenRef.current)
       setLocalScreen(null)
       setScreenPubId("")
     } else {
-      const { stream, streamId } = await startScreen(zgRef.current, {
+      const { stream, streamId } = await startScreen(engine, {
         userID: myUserID,
         screenPreviewEl: screenRef.current,
         withAudio: true,
         onEnded: () => {
           setLocalScreen(null)
           setScreenPubId("")
-          if (zgRef.current) stopScreen(zgRef.current, stream, streamId, screenRef.current)
+          if (engine) stopScreen(engine, stream, streamId, screenRef.current)
         },
       })
       setLocalScreen(stream)
       setScreenPubId(streamId)
     }
-  }, [self, isJoined, localScreen, screenPubId, myUserID])
+  }, [self, engine, isJoined, localScreen, screenPubId, myUserID])
 
   const onLeave = useCallback(async () => {
-    if (!self || !zgRef.current || roomID == null || !isJoined) return
-    stopScreen(zgRef.current, localScreen, screenPubId, screenRef.current)
-    await stopCamera(zgRef.current, localCam, camPubId, camRef.current)
-    await stopAudio(zgRef.current, localAudio, audioPubId)
+    if (!self || !engine || roomID == null || !isJoined) return
+    stopScreen(engine, localScreen, screenPubId, screenRef.current)
+    await stopCamera(engine, localCam, camPubId, camRef.current)
+    await stopAudio(engine, localAudio, audioPubId)
     setLocalScreen(null)
     setScreenPubId("")
     setLocalCam(null)
     setCamPubId("")
     setLocalAudio(null)
     setAudioPubId("")
-    await logoutRoom(zgRef.current, roomID)
+    await logoutRoom(engine, roomID)
     setIsJoined(false)
     navigate("/")
   }, [
     self,
+    engine,
     roomID,
     isJoined,
     localScreen,
@@ -358,7 +355,7 @@ export default function UserCard(props: UserCardProps) {
 
   // Self mic on?
   const isSelfMicOn = useMemo(() => {
-    return self && localAudio ? isStreamAudioOn(localAudio.stream as MediaStream) : false
+    return self && localAudio ? isStreamAudioOn(localAudio.stream) : false
   }, [self, localAudio])
 
   // Remote mic on?

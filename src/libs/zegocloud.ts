@@ -3,6 +3,7 @@ import { ZegoExpressEngine } from "zego-express-engine-webrtc"
 import type { ZegoUser } from "zego-express-engine-webrtc/sdk/code/zh/ZegoExpressEntity.rtm"
 import type ZegoLocalStream from "zego-express-engine-webrtc/sdk/code/zh/ZegoLocalStream.web"
 import { randomCode } from "@/utils/number"
+import type { StreamKind, User } from "@/types/common"
 
 const APP_ID = Number(import.meta.env.VITE_ZEGO_APP_ID)
 const SERVER_WS = import.meta.env.VITE_ZEGO_SERVER_WS
@@ -12,9 +13,6 @@ export type RemoteMedia = {
   stream: MediaStream
 }
 export type RemoteViewMap = Map<string, RemoteMedia>
-
-export type Participant = { userID: string; userName: string }
-export type StreamKind = "cam" | "screen" | "audio"
 
 type WireStreamsOpts = {
   remoteViewMap: RemoteViewMap
@@ -50,9 +48,9 @@ export function parseStreamId(
 /** ==== Room users ==== */
 export function wireParticipants(
   engine: ZegoExpressEngine,
-  onParticipants: (updater: (prev: Participant[]) => Participant[]) => void,
+  onParticipants: (updater: (prev: User[]) => User[]) => void,
   opts?: {
-    upsertUsers?: (list: Participant[]) => void
+    upsertUsers?: (list: User[]) => void
     removeUsers?: (ids: string[]) => void
   }
 ) {
@@ -60,7 +58,7 @@ export function wireParticipants(
     onParticipants((prev) => {
       const map = new Map(prev.map((u) => [u.userID, u]))
       if (updateType === "ADD") {
-        const ups: Participant[] = []
+        const ups: User[] = []
         userList.forEach((u) => {
           const p = { userID: u.userID, userName: u.userName ?? "" }
           map.set(u.userID, p)

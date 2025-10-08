@@ -1,20 +1,17 @@
+import type { StreamKind, User, UserStreamSlot } from "@/types/common"
 import { create } from "zustand"
 import { immer } from "zustand/middleware/immer"
-import type { Participant } from "@/libs/zegocloud"
-
-type SlotKind = "cam" | "screen" | "audio";
-export type UserSlots = { cam?: string | null; screen?: string | null, audio?: string | null }
 
 type RoomState = {
-  users: Record<string, Participant>
-  slots: Record<string, UserSlots>
+  users: Record<string, User>
+  slots: Record<string, UserStreamSlot>
 }
 
 type RoomAction = {
-  upsertUsers: (userList: Participant[]) => void
+  upsertUsers: (userList: User[]) => void
   removeUsers: (ids: string[]) => void
-  setSlot: (userID: string, kind: SlotKind, streamId: string) => void
-  clearSlot: (userID: string, kind: SlotKind) => void
+  setSlot: (userID: string, kind: StreamKind, streamId: string) => void
+  clearSlot: (userID: string, kind: StreamKind) => void
   resetAll: () => void
 }
 
@@ -36,9 +33,9 @@ export const useRoomStore = create(immer<RoomState & RoomAction>((set) => ({
         delete state.slots[id]
       }
     }),
-  setSlot: (userID: string, kind: SlotKind, id: string) =>
+  setSlot: (userID: string, kind: StreamKind, id: string) =>
     set((state) => { state.slots[userID] ??= {}; state.slots[userID]![kind] = id; }),
-  clearSlot: (userID: string, kind: SlotKind) =>
+  clearSlot: (userID: string, kind: StreamKind) =>
     set((state) => {
       if (state.slots[userID]) delete state.slots[userID]![kind];
     }),
