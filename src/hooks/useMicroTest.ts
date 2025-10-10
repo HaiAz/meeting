@@ -11,13 +11,9 @@ export function useMicroTest(sourceStream?: MediaStream | null) {
 
   const startMicTest = async (selectedMicro?: MediaDeviceInfo | null) => {
     try {
-      let stream: MediaStream;
+      let stream = sourceStream;
 
-      if (sourceStream) {
-        // Dùng stream có sẵn (ví dụ từ Zego)
-        stream = sourceStream;
-      } else {
-        // Hoặc xin quyền thu âm tạm thời từ device cụ thể
+      if (!stream || stream.getAudioTracks().length === 0) {
         stream = await navigator.mediaDevices.getUserMedia({
           audio: selectedMicro
             ? { deviceId: { exact: selectedMicro.deviceId } }
@@ -27,18 +23,23 @@ export function useMicroTest(sourceStream?: MediaStream | null) {
       }
 
       const audioContext = new AudioContext();
+      await audioContext.resume();
       const source = audioContext.createMediaStreamSource(stream);
       const analyser = audioContext.createAnalyser();
       analyser.fftSize = 512;
-
       source.connect(analyser);
 
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const dataArray = new Uint8Array(analyser.fftSize);
       const loop = () => {
-        analyser.getByteFrequencyData(dataArray);
-        const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-        setMicLevel(avg);
-        console.log(avg);
+        analyser.getByteTimeDomainData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          const normalized = (dataArray[i] - 128) / 128;
+          sum += normalized * normalized;
+        }
+        const rms = Math.sqrt(sum / dataArray.length);
+        const level = rms * 100;
+        setMicLevel(level);
 
         animRef.current = requestAnimationFrame(loop);
       };
