@@ -1,3 +1,4 @@
+// store/roomStore.ts
 import type { StreamKind, User, UserStreamSlot } from "@/types/common"
 import { create } from "zustand"
 import { immer } from "zustand/middleware/immer"
@@ -15,33 +16,38 @@ type RoomAction = {
   resetAll: () => void
 }
 
-export const useRoomStore = create(immer<RoomState & RoomAction>((set) => ({
-  users: {},
-  slots: {},
+export const useRoomStore = create(
+  immer<RoomState & RoomAction>((set) => ({
+    users: {},
+    slots: {},
 
-  upsertUsers: (userList) =>
-    set((state) => {
-      for (const user of userList) {
-        state.users[user.userID] = user
-        state.slots[user.userID] ??= {}
-      }
-    }),
-  removeUsers: (ids) =>
-    set((state) => {
-      for (const id of ids) {
-        delete state.users[id]
-        delete state.slots[id]
-      }
-    }),
-  setSlot: (userID: string, kind: StreamKind, id: string) =>
-    set((state) => { state.slots[userID] ??= {}; state.slots[userID]![kind] = id; }),
-  clearSlot: (userID: string, kind: StreamKind) =>
-    set((state) => {
-      if (state.slots[userID]) delete state.slots[userID]![kind];
-    }),
-  resetAll: () =>
-    set((state) => {
-      state.users = {}
-      state.slots = {}
-    }),
-})));
+    upsertUsers: (userList) =>
+      set((state) => {
+        for (const user of userList) {
+          state.users[user.userID] = user
+          state.slots[user.userID] ??= {}
+        }
+      }),
+    removeUsers: (ids) =>
+      set((state) => {
+        for (const id of ids) {
+          delete state.users[id]
+          delete state.slots[id]
+        }
+      }),
+    setSlot: (userID: string, kind: StreamKind, id: string) =>
+      set((state) => {
+        state.slots[userID] ??= {}
+        state.slots[userID]![kind] = id
+      }),
+    clearSlot: (userID: string, kind: StreamKind) =>
+      set((state) => {
+        if (state.slots[userID]) delete state.slots[userID]![kind]
+      }),
+    resetAll: () =>
+      set((state) => {
+        state.users = {}
+        state.slots = {}
+      }),
+  }))
+)
