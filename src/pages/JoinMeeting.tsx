@@ -105,7 +105,12 @@ export default function JoinMeetingPage() {
   const { open, onOpen, onClose } = useDisclosure();
 
   const handleJoinMeet = () => {
-    navigate(`/meeting/${params.roomID}?userName=${userName}`);
+    navigate(`/meeting/${params.roomID}?userName=${userName}`, {
+      state: {
+        micOn,
+        camOn,
+      },
+    });
   };
 
   return (

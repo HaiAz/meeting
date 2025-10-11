@@ -1,26 +1,26 @@
-import { randomCode } from "@/utils/number"
-import { Box, Flex, Heading, Span, Button, Input } from "@chakra-ui/react"
-import { useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { randomCode } from "@/utils/number";
+import { Box, Flex, Heading, Span, Button, Input } from "@chakra-ui/react";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 export default function HomePage() {
-  const navigate = useNavigate()
+  const navigate = useNavigate();
 
-  const [roomID, setRoomID] = useState<string>("")
-  const [userName, setUserName] = useState<string>("")
+  const [roomID, setRoomID] = useState<string>("");
+  const [userName, setUserName] = useState<string>("");
 
   const handleCreateNewMeeting = () => {
-    const newRoomId = randomCode()
-    navigate(`/meeting/${newRoomId}`)
-    setRoomID(newRoomId)
-  }
+    const newRoomId = randomCode();
+    navigate(`/meeting/${newRoomId}`);
+    setRoomID(newRoomId);
+  };
 
   const joinRoom = () => {
-    if (roomID === "") return
-    navigate(`/meeting/${roomID}?userName=${userName}`)
-    setRoomID("")
-    setUserName("")
-  }
+    if (roomID === "") return;
+    navigate(`/join-meeting/${roomID}?userName=${userName}`);
+    setRoomID("");
+    setUserName("");
+  };
 
   return (
     <Box>
@@ -51,5 +51,5 @@ export default function HomePage() {
         </Flex>
       </Flex>
     </Box>
-  )
+  );
 }
